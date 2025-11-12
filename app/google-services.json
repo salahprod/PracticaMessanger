@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "46288932343",
+    "firebase_url": "https://androidmessage-e857c-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "androidmessage-e857c",
+    "storage_bucket": "androidmessage-e857c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:46288932343:android:ae9a9cef743a70ef77f2f2",
+        "android_client_info": {
+          "package_name": "com.example.androidmessage1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCma7ZDD8K_v4MqEzaqJAA8NnRU5Ym8hrE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

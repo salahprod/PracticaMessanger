@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".RegisterActivity">
+
+    <LinearLayout
+        android:background="#FFFFFF"
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+        <ScrollView
+            android:id="@+id/forma_1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/forma"
+            android:paddingHorizontal="18dp">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:id="@+id/basic_2"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="115dp"
+                    android:layout_marginBottom="191dp"
+                    android:background="@drawable/stroke"
+                    android:elevation="4dp"
+                    android:gravity="center_horizontal"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/login_form_2"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="34dp"
+                        android:layout_marginBottom="17dp"
+                        android:fontFamily="@font/montserrat_extrabold"
+                        android:text="Login Form"
+                        android:textColor="#000000"
+                        android:textSize="36sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:id="@+id/button_general_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="19dp"
+                        android:layout_marginRight="19dp"
+                        android:layout_marginBottom="48dp"
+                        android:background="@drawable/stroke"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:focusableInTouchMode="true"
+                        android:foreground="?attr/selectableItemBackground"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/login_text"
+                            android:layout_width="148dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="2dp"
+                            android:layout_weight="1"
+                            android:background="@null"
+                            android:fontFamily="@font/montserrat_medium"
+                            android:gravity="center"
+                            android:hint="Login"
+                            android:inputType="text"
+                            android:paddingVertical="15dp"
+                            android:textColorHint="#000000"
+                            android:textSize="20sp"
+                            android:focusable="false"
+                            android:clickable="true"
+                            android:cursorVisible="false"
+                            android:onClick="goToLoginActivity"
+                            />
+                        <LinearLayout
+                            android:id="@+id/button_sing_2"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/switch_blue"
+                            android:gravity="center"
+                            android:orientation="vertical"
+                            android:paddingHorizontal="65dp"
+                            android:paddingVertical="14dp">
+
+                            <TextView
+                                android:id="@+id/text_sign_up"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="@font/montserrat_medium"
+                                android:gravity="center"
+                                android:text="Sign up"
+                                android:textColor="#FFFFFF"
+                                android:textSize="20sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <EditText
+                        android:id="@+id/login_text_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="23dp"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/stroke"
+                        android:elevation="4dp"
+                        android:fontFamily="@font/montserrat_medium"
+                        android:hint="Login"
+                        android:inputType="text"
+                        android:paddingHorizontal="36dp"
+                        android:paddingVertical="17dp"
+                        android:textColor="#9F9C9C"
+                        android:textSize="16sp" />
+
+                    <EditText
+                        android:id="@+id/email_text_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="23dp"
+                        android:layout_marginBottom="20dp"
+                        android:background="@drawable/stroke"
+                        android:elevation="4dp"
+                        android:fontFamily="@font/montserrat_medium"
+                        android:hint="Email Address"
+                        android:inputType="text"
+                        android:paddingHorizontal="33dp"
+                        android:paddingVertical="19dp"
+                        android:textColor="#9F9C9C"
+                        android:textSize="16sp" />
+
+                    <EditText
+                        android:id="@+id/password_text_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="23dp"
+                        android:layout_marginBottom="48dp"
+                        android:background="@drawable/stroke"
+                        android:elevation="4dp"
+                        android:fontFamily="@font/montserrat_medium"
+                        android:hint="Password"
+                        android:inputType="text"
+                        android:paddingHorizontal="35dp"
+                        android:paddingVertical="19dp"
+                        android:textColor="#9F9C9C"
+                        android:textSize="16sp" />
+
+                    <LinearLayout
+                        android:id="@+id/button_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="17dp"
+                        android:layout_marginBottom="63dp"
+                        android:background="@drawable/switch_blue"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_horizontal"
+                        android:orientation="vertical"
+                        android:paddingVertical="14dp">
+
+                        <TextView
+                            android:id="@+id/text_sign_button_2"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="@font/montserrat_medium"
+                            android:text="Sign up"
+                            android:textColor="#FFFFFF"
+                            android:textSize="20sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+    </LinearLayout>
+
+
+
+
+</androidx.constraintlayout.widget.ConstraintLayout>
