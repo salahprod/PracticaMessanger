@@ -88,7 +88,7 @@
                             android:background="@drawable/switch_blue"
                             android:gravity="center"
                             android:orientation="vertical"
-                            android:paddingHorizontal="65dp"
+                            android:paddingHorizontal="55dp"
                             android:paddingVertical="14dp">
 
                             <TextView

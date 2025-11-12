@@ -100,7 +100,7 @@
                     </LinearLayout>
 
                     <EditText
-                        android:id="@+id/login_text_1"
+                        android:id="@+id/email_text_1"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginHorizontal="23dp"
@@ -108,7 +108,7 @@
                         android:background="@drawable/stroke"
                         android:elevation="4dp"
                         android:fontFamily="@font/montserrat_medium"
-                        android:hint="Login"
+                        android:hint="Email Address"
                         android:inputType="text"
                         android:paddingHorizontal="35dp"
                         android:paddingVertical="17dp"

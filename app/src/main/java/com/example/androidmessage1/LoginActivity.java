@@ -45,7 +45,7 @@ public class LoginActivity extends AppCompatActivity {
         binding.buttonLogin1.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                String email = binding.loginText1.getText().toString().trim();
+                String email = binding.emailText1.getText().toString().trim();
                 String password = binding.passwordText1.getText().toString().trim();
 
                 if (email.isEmpty() || password.isEmpty()) {
