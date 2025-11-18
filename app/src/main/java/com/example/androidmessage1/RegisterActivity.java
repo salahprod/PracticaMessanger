@@ -22,9 +22,10 @@ public class RegisterActivity extends AppCompatActivity {
     public void goToLoginActivity(View view) {
         Intent intent = new Intent(this, LoginActivity.class);
         startActivity(intent);
-        overridePendingTransition(0, 0); // Убирает анимацию
-        finish(); // опционально
+        overridePendingTransition(0, 0);
+        finish();
     }
+
     private ActivityRegisterBinding binding;
 
     @Override
@@ -33,32 +34,51 @@ public class RegisterActivity extends AppCompatActivity {
         binding = ActivityRegisterBinding.inflate(getLayoutInflater());
         EdgeToEdge.enable(this);
         setContentView(binding.getRoot());
+
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
         });
 
+        // Кнопка регистрации
         binding.button2.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
 
-                if (binding.loginText2.getText().toString().isEmpty() || binding.passwordText2.getText().toString().isEmpty()
-                        || binding.emailText2.getText().toString().isEmpty()) {
-                    Toast.makeText(getApplicationContext(), "Fields cannot be empty", Toast.LENGTH_SHORT).show();
+                if (binding.loginText2.getText().toString().isEmpty() ||
+                        binding.passwordText2.getText().toString().isEmpty() ||
+                        binding.emailText2.getText().toString().isEmpty()) {
 
-                }else {
-                    FirebaseAuth.getInstance().createUserWithEmailAndPassword(binding.emailText2.getText().toString(), binding.passwordText2.getText().toString());
-                    HashMap<String,String> userInfo = new HashMap<>();
+                    Toast.makeText(getApplicationContext(), "Fields cannot be empty", Toast.LENGTH_SHORT).show();
+                } else {
+
+                    FirebaseAuth.getInstance().createUserWithEmailAndPassword(
+                            binding.emailText2.getText().toString(),
+                            binding.passwordText2.getText().toString()
+                    );
+
+                    HashMap<String, String> userInfo = new HashMap<>();
                     userInfo.put("login", binding.loginText2.getText().toString());
                     userInfo.put("email", binding.emailText2.getText().toString());
-                    userInfo.put("profileImage","");
-                    FirebaseDatabase.getInstance().getReference().child("Users").child(FirebaseAuth.getInstance().getCurrentUser().getUid())
-                            .setValue(userInfo);
-                    startActivity(new Intent(RegisterActivity.this,MainActivity.class));
+                    userInfo.put("profileImage", "");
 
+                    FirebaseDatabase.getInstance()
+                            .getReference()
+                            .child("Users")
+                            .child(FirebaseAuth.getInstance().getCurrentUser().getUid())
+                            .setValue(userInfo);
+
+                    startActivity(new Intent(RegisterActivity.this, MainActivity.class));
                 }
             }
+        });
+
+        //  Кликабельный текст "Условия использования"
+        binding.politicalButton2.setOnClickListener(v -> {
+
+            Intent intent = new Intent(RegisterActivity.this, PoliticalActivity.class);
+            startActivity(intent);
         });
     }
 }
