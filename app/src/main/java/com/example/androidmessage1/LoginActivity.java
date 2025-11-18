@@ -46,8 +46,15 @@ public class LoginActivity extends AppCompatActivity {
             if (email.isEmpty() || password.isEmpty()) {
                 Toast.makeText(getApplicationContext(), "Fields cannot be empty", Toast.LENGTH_SHORT).show();
             } else {
+                // Блокируем кнопку и показываем сообщение о процессе
+                binding.buttonLogin1.setEnabled(false);
+                Toast.makeText(getApplicationContext(), "Logging in...", Toast.LENGTH_SHORT).show();
+
                 FirebaseAuth.getInstance().signInWithEmailAndPassword(email, password)
                         .addOnCompleteListener(task -> {
+
+                            // Включаем кнопку обратно
+                            binding.buttonLogin1.setEnabled(true);
 
                             if (task.isSuccessful()) {
                                 Toast.makeText(LoginActivity.this, "Login successful!", Toast.LENGTH_SHORT).show();
@@ -57,9 +64,9 @@ public class LoginActivity extends AppCompatActivity {
                             } else {
                                 String errorMessage = "Login failed";
                                 if (task.getException() != null) {
-                                    errorMessage += ": " + task.getException().getMessage();
+                                    errorMessage = task.getException().getMessage();
                                 }
-                                Toast.makeText(LoginActivity.this, errorMessage, Toast.LENGTH_SHORT).show();
+                                Toast.makeText(LoginActivity.this, errorMessage, Toast.LENGTH_LONG).show();
                             }
                         });
             }

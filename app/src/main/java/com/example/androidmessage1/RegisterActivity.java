@@ -46,37 +46,70 @@ public class RegisterActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
 
-                if (binding.loginText2.getText().toString().isEmpty() ||
-                        binding.passwordText2.getText().toString().isEmpty() ||
-                        binding.emailText2.getText().toString().isEmpty()) {
+                String login = binding.loginText2.getText().toString().trim();
+                String email = binding.emailText2.getText().toString().trim();
+                String password = binding.passwordText2.getText().toString().trim();
 
+                if (login.isEmpty() || password.isEmpty() || email.isEmpty()) {
                     Toast.makeText(getApplicationContext(), "Fields cannot be empty", Toast.LENGTH_SHORT).show();
-                } else {
-
-                    FirebaseAuth.getInstance().createUserWithEmailAndPassword(
-                            binding.emailText2.getText().toString(),
-                            binding.passwordText2.getText().toString()
-                    );
-
-                    HashMap<String, String> userInfo = new HashMap<>();
-                    userInfo.put("login", binding.loginText2.getText().toString());
-                    userInfo.put("email", binding.emailText2.getText().toString());
-                    userInfo.put("profileImage", "");
-
-                    FirebaseDatabase.getInstance()
-                            .getReference()
-                            .child("Users")
-                            .child(FirebaseAuth.getInstance().getCurrentUser().getUid())
-                            .setValue(userInfo);
-
-                    startActivity(new Intent(RegisterActivity.this, MainActivity.class));
+                    return;
                 }
+
+                if (password.length() < 6) {
+                    Toast.makeText(getApplicationContext(), "Password must be at least 6 characters", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                // Блокируем кнопку чтобы избежать повторных нажатий
+                binding.button2.setEnabled(false);
+                Toast.makeText(getApplicationContext(), "Registering...", Toast.LENGTH_SHORT).show();
+
+                // Создаем пользователя в Firebase Auth
+                FirebaseAuth.getInstance().createUserWithEmailAndPassword(email, password)
+                        .addOnCompleteListener(task -> {
+                            if (task.isSuccessful()) {
+                                // Регистрация успешна - получаем UID созданного пользователя
+                                String userId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+
+                                // Создаем данные пользователя для базы
+                                HashMap<String, String> userInfo = new HashMap<>();
+                                userInfo.put("login", login);
+                                userInfo.put("email", email);
+                                userInfo.put("profileImage", "");
+
+                                // Записываем в базу данных
+                                FirebaseDatabase.getInstance()
+                                        .getReference()
+                                        .child("Users")
+                                        .child(userId)
+                                        .setValue(userInfo)
+                                        .addOnCompleteListener(dbTask -> {
+                                            if (dbTask.isSuccessful()) {
+                                                Toast.makeText(RegisterActivity.this, "Registration successful!", Toast.LENGTH_SHORT).show();
+                                                startActivity(new Intent(RegisterActivity.this, MainActivity.class));
+                                                finish();
+                                            } else {
+                                                binding.button2.setEnabled(true);
+                                                Toast.makeText(RegisterActivity.this, "Error saving user data: " +
+                                                        dbTask.getException().getMessage(), Toast.LENGTH_LONG).show();
+                                            }
+                                        });
+
+                            } else {
+                                // Ошибка регистрации
+                                binding.button2.setEnabled(true);
+                                String errorMessage = "Registration failed";
+                                if (task.getException() != null) {
+                                    errorMessage = task.getException().getMessage();
+                                }
+                                Toast.makeText(RegisterActivity.this, errorMessage, Toast.LENGTH_LONG).show();
+                            }
+                        });
             }
         });
 
-        //  Кликабельный текст "Условия использования"
+        // Кликабельный текст "Условия использования"
         binding.politicalButton2.setOnClickListener(v -> {
-
             Intent intent = new Intent(RegisterActivity.this, PoliticalActivity.class);
             startActivity(intent);
         });
