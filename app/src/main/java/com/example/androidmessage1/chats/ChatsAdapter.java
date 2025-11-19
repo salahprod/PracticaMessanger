@@ -1,6 +1,5 @@
 package com.example.androidmessage1.chats;
 
-import android.text.Layout;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -13,7 +12,6 @@ import com.bumptech.glide.Glide;
 import com.example.androidmessage1.R;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
-import com.google.firebase.Firebase;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.FirebaseDatabase;
@@ -37,6 +35,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
 
     @Override
     public void onBindViewHolder(@NonNull ChatViewHolder holder, int position) {
+        // ✅ Устанавливаем имя чата
         holder.chat_name_tv.setText(chats.get(position).getChat_name());
 
         String userId;
@@ -47,24 +46,26 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             userId = chats.get(position).getUserId2();
         }
 
+        // ✅ Безопасная загрузка аватарки
         FirebaseDatabase.getInstance().getReference().child("Users").child(userId)
                 .child("profileImage").get()
                 .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
                     @Override
                     public void onComplete(@NonNull Task<DataSnapshot> task) {
                         try {
-                            String profileImageUrl = task.getResult().getValue().toString();
+                            if (task.isSuccessful() && task.getResult() != null && task.getResult().getValue() != null) {
+                                String profileImageUrl = task.getResult().getValue().toString();
 
-                            if(!profileImageUrl.isEmpty())
-                                Glide.with(holder.itemView.getContext()).load(profileImageUrl).into(holder.chat_iv);
-
-                        }catch (Exception e){
-                            Toast.makeText(holder.itemView.getContext(), "Failed to get profile image link",Toast.LENGTH_SHORT).show();
-
+                                if(profileImageUrl != null && !profileImageUrl.isEmpty()) {
+                                    Glide.with(holder.itemView.getContext()).load(profileImageUrl).into(holder.chat_iv);
+                                }
+                            }
+                        } catch (Exception e) {
+                            // ✅ Молча игнорируем ошибку вместо Toast
+                            System.out.println("Failed to load profile image: " + e.getMessage());
                         }
                     }
                 });
-
     }
 
     @Override
