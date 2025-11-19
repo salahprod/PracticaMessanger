@@ -22,11 +22,13 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 
 public class NewChatFragment extends Fragment {
 
     private FragmentNewChatBinding binding;
     private ArrayList<User> usersList = new ArrayList<>();
+    private ArrayList<String> userIdsList = new ArrayList<>(); // ✅ ДОБАВИЛ: для хранения ID пользователей
 
     @Nullable
     @Override
@@ -49,12 +51,15 @@ public class NewChatFragment extends Fragment {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         usersList.clear();
+                        userIdsList.clear(); // ✅ ДОБАВИЛ: очищаем список ID
 
                         // Получаем данные текущего пользователя
                         String currentUserEmail = FirebaseAuth.getInstance().getCurrentUser().getEmail();
                         System.out.println("Текущий пользователь Email: " + currentUserEmail);
 
                         for (DataSnapshot userSnapshot : snapshot.getChildren()) {
+                            String userId = userSnapshot.getKey(); // ✅ ПОЛУЧАЕМ ID пользователя
+
                             // Получаем логин и email пользователя из базы
                             String userLogin = userSnapshot.child("login").getValue(String.class);
                             String userEmail = userSnapshot.child("email").getValue(String.class);
@@ -78,11 +83,22 @@ public class NewChatFragment extends Fragment {
 
                             // Добавляем пользователя в список
                             usersList.add(new User(userLogin, profileImage));
+                            userIdsList.add(userId); // ✅ ДОБАВИЛ: сохраняем ID
 
-                            System.out.println("Загружен пользователь: " + userLogin);
+                            System.out.println("Загружен пользователь: " + userLogin + " | ID: " + userId);
                         }
 
-                        binding.userRv.setAdapter(new UsersAdapter(usersList));
+                        // ✅ ИЗМЕНИЛ: передаем listener в адаптер
+                        UsersAdapter adapter = new UsersAdapter(usersList, new UsersAdapter.OnUserClickListener() {
+                            @Override
+                            public void onUserClick(int position) {
+                                // Получаем ID выбранного пользователя
+                                String selectedUserId = userIdsList.get(position);
+                                // ✅ ВЫЗЫВАЕМ: создание чата
+                                createChatWithUser(selectedUserId);
+                            }
+                        });
+                        binding.userRv.setAdapter(adapter);
 
                         if (usersList.isEmpty()) {
                             Toast.makeText(getContext(), "Другие пользователи не найдены", Toast.LENGTH_SHORT).show();
@@ -97,6 +113,112 @@ public class NewChatFragment extends Fragment {
                         System.out.println("Ошибка БД: " + error.getMessage());
                     }
                 });
+    }
+
+    // ✅ ДОБАВИЛ: метод создания чата с пользователем
+    private void createChatWithUser(String otherUserId) {
+        String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+
+        // ✅ АЛЬТЕРНАТИВНЫЙ ВАРИАНТ: Автоматическая генерация ID чата
+        String chatId = FirebaseDatabase.getInstance()
+                .getReference("Chats")
+                .push()
+                .getKey();
+
+        System.out.println("Создаем чат с ID: " + chatId);
+
+        // Проверяем существует ли уже чат между этими пользователями
+        checkIfChatExists(chatId, currentUserId, otherUserId);
+    }
+
+    // ✅ ДОБАВИЛ: проверка существования чата
+    private void checkIfChatExists(String chatId, String currentUserId, String otherUserId) {
+        // Ищем чаты где оба пользователя являются участниками
+        FirebaseDatabase.getInstance().getReference("Chats")
+                .orderByChild("user1")
+                .equalTo(currentUserId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        boolean chatExists = false;
+                        String existingChatId = null;
+
+                        for (DataSnapshot chatSnapshot : snapshot.getChildren()) {
+                            String user2 = chatSnapshot.child("user2").getValue(String.class);
+                            if (otherUserId.equals(user2)) {
+                                chatExists = true;
+                                existingChatId = chatSnapshot.getKey();
+                                break;
+                            }
+                        }
+
+                        if (chatExists) {
+                            // Чат уже существует
+                            Toast.makeText(getContext(), "Chat already exists", Toast.LENGTH_SHORT).show();
+                            openChatActivity(existingChatId, otherUserId);
+                        } else {
+                            // Создаем новый чат
+                            createNewChat(chatId, currentUserId, otherUserId);
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Toast.makeText(getContext(), "Error checking chat", Toast.LENGTH_SHORT).show();
+                    }
+                });
+    }
+
+    // ✅ ДОБАВИЛ: создание нового чата в Firebase (АЛЬТЕРНАТИВНЫЙ ВАРИАНТ)
+    private void createNewChat(String chatId, String currentUserId, String otherUserId) {
+        // Данные чата
+        HashMap<String, Object> chatData = new HashMap<>();
+        chatData.put("chat_id", chatId);
+        chatData.put("user1", currentUserId);
+        chatData.put("user2", otherUserId);
+        chatData.put("createdAt", System.currentTimeMillis());
+        chatData.put("lastMessage", "");
+        chatData.put("lastMessageTime", 0);
+
+        // Данные для обновления в разных местах базы
+        HashMap<String, Object> updates = new HashMap<>();
+
+        // 1. Записываем сам чат
+        updates.put("Chats/" + chatId, chatData);
+
+        // 2. ✅ АЛЬТЕРНАТИВНЫЙ ВАРИАНТ: Добавляем ссылки на чаты у пользователей
+        updates.put("Users/" + currentUserId + "/chats/" + chatId, true);
+        updates.put("Users/" + otherUserId + "/chats/" + chatId, true);
+
+        // Выполняем все обновления атомарно
+        FirebaseDatabase.getInstance().getReference()
+                .updateChildren(updates)
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        Toast.makeText(getContext(), "Chat created successfully!", Toast.LENGTH_SHORT).show();
+                        openChatActivity(chatId, otherUserId);
+                    } else {
+                        Toast.makeText(getContext(), "Failed to create chat: " +
+                                task.getException().getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                });
+    }
+
+    // ✅ ДОБАВИЛ: переход в активность чата
+    private void openChatActivity(String chatId, String otherUserId) {
+        // TODO: Создай ChatActivity и раскомментируй
+        // Intent intent = new Intent(getContext(), ChatActivity.class);
+        // intent.putExtra("chatId", chatId);
+        // intent.putExtra("otherUserId", otherUserId);
+        // startActivity(intent);
+
+        // Временно показываем информацию о созданном чате
+        Toast.makeText(getContext(),
+                "Chat created!\nID: " + chatId +
+                        "\nWith user: " + otherUserId,
+                Toast.LENGTH_LONG).show();
+
+        System.out.println("Чат создан: " + chatId + " с пользователем: " + otherUserId);
     }
 
     @Override

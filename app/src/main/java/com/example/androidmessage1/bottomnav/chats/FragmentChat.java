@@ -44,74 +44,92 @@ public class FragmentChat extends Fragment {
     }
 
     private void loadChats() {
-        String uid = Objects.requireNonNull(FirebaseAuth.getInstance().getCurrentUser()).getUid();
+        String currentUid = Objects.requireNonNull(FirebaseAuth.getInstance().getCurrentUser()).getUid();
 
-        FirebaseDatabase.getInstance().getReference().addListenerForSingleValueEvent(new ValueEventListener() {
+        FirebaseDatabase.getInstance().getReference("Chats").addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 chats.clear(); // Очищаем список перед загрузкой новых данных
 
-                DataSnapshot userChatsSnapshot = snapshot.child("Users").child(uid).child("chats");
+                // ✅ ИСПРАВЛЕНИЕ: Ищем чаты где текущий пользователь является участником
+                for (DataSnapshot chatSnapshot : snapshot.getChildren()) {
+                    String chatId = chatSnapshot.getKey();
 
-                // Проверяем, существует ли у пользователя чаты
-                if (!userChatsSnapshot.exists()) {
-                    // Можно показать сообщение, что чатов нет
-                    return;
-                }
+                    // Получаем участников чата
+                    String userId1 = chatSnapshot.child("user1").getValue(String.class);
+                    String userId2 = chatSnapshot.child("user2").getValue(String.class);
 
-                String chatsStr = Objects.requireNonNull(userChatsSnapshot.getValue()).toString();
-
-                // Проверяем, не пустая ли строка с чатами
-                if (chatsStr.isEmpty()) {
-                    return;
-                }
-
-                String[] chatsIds = chatsStr.split(",");
-
-                for (String chatId : chatsIds) {
-                    // Пропускаем пустые ID
-                    if (chatId.trim().isEmpty()) {
+                    // Проверяем что данные существуют
+                    if (userId1 == null || userId2 == null) {
                         continue;
                     }
 
-                    DataSnapshot chatSnapshot = snapshot.child("Chats").child(chatId.trim());
+                    // ✅ Проверяем участвует ли текущий пользователь в этом чате
+                    if (userId1.equals(currentUid) || userId2.equals(currentUid)) {
+                        // Определяем ID собеседника
+                        String otherUserId = userId1.equals(currentUid) ? userId2 : userId1;
 
-                    // Проверяем, существует ли чат
-                    if (!chatSnapshot.exists()) {
-                        continue;
+                        // Загружаем данные собеседника
+                        loadOtherUserData(chatId, userId1, userId2, otherUserId);
                     }
-
-                    String userId1 = Objects.requireNonNull(chatSnapshot.child("user1").getValue()).toString();
-                    String userId2 = Objects.requireNonNull(chatSnapshot.child("user2").getValue()).toString();
-                    String chatUserId = uid.equals(userId1) ? userId2 : userId1;
-
-                    // Получаем имя пользователя для чата
-                    DataSnapshot chatUserSnapshot = snapshot.child("Users").child(chatUserId);
-                    if (!chatUserSnapshot.exists()) {
-                        continue;
-                    }
-
-                    String chatName = Objects.requireNonNull(chatUserSnapshot.child("username").getValue()).toString();
-
-                    Chat chat = new Chat(chatId.trim(), chatName, userId1, userId2);
-                    chats.add(chat);
                 }
 
-                // Уведомляем адаптер об изменениях
-                chatsAdapter.notifyDataSetChanged();
-
-                // Проверяем, есть ли чаты
+                // Если после проверки всех чатов список пуст
                 if (chats.isEmpty()) {
-                    // Можно показать сообщение, что чатов нет
                     Toast.makeText(getContext(), "No chats found", Toast.LENGTH_SHORT).show();
                 }
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                Toast.makeText(getContext(), "Failed to get user chats: " + error.getMessage(), Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), "Failed to load chats: " + error.getMessage(), Toast.LENGTH_SHORT).show();
             }
         });
+    }
+
+    private void loadOtherUserData(String chatId, String userId1, String userId2, String otherUserId) {
+        FirebaseDatabase.getInstance().getReference("Users").child(otherUserId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot userSnapshot) {
+                        if (!userSnapshot.exists()) {
+                            return;
+                        }
+
+                        // ✅ Получаем логин собеседника
+                        String chatName = userSnapshot.child("login").getValue(String.class);
+                        if (chatName == null || chatName.trim().isEmpty()) {
+                            // Если нет логина, используем email
+                            String email = userSnapshot.child("email").getValue(String.class);
+                            if (email != null && email.contains("@")) {
+                                chatName = email.substring(0, email.indexOf("@"));
+                            } else {
+                                chatName = "Unknown User";
+                            }
+                        }
+
+                        // ✅ Получаем аватарку
+                        String profileImage = userSnapshot.child("profileImage").getValue(String.class);
+                        if (profileImage == null) {
+                            profileImage = "";
+                        }
+
+                        // ✅ Создаем объект чата
+                        // Конструктор: Chat(String chat_id, String userId2, String userId1, String chat_name)
+                        Chat chat = new Chat(chatId, userId2, userId1, chatName);
+
+                        // Добавляем в список и обновляем адаптер
+                        chats.add(chat);
+                        chatsAdapter.notifyDataSetChanged();
+
+                        System.out.println("Загружен чат: " + chatName + " | ID: " + chatId);
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        System.out.println("Ошибка загрузки пользователя: " + otherUserId);
+                    }
+                });
     }
 
     @Override
