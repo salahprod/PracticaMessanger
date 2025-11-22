@@ -1,5 +1,6 @@
 package com.example.androidmessage1.chats;
 
+import android.content.Intent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -9,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
+import com.example.androidmessage1.ChatActivity;
 import com.example.androidmessage1.R;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
@@ -35,7 +37,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
 
     @Override
     public void onBindViewHolder(@NonNull ChatViewHolder holder, int position) {
-        // ✅ Устанавливаем имя чата
+        //  Устанавливаем имя чата
         holder.chat_name_tv.setText(chats.get(position).getChat_name());
 
         String userId;
@@ -46,7 +48,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             userId = chats.get(position).getUserId2();
         }
 
-        // ✅ Безопасная загрузка аватарки
+        //  Безопасная загрузка аватарки
         FirebaseDatabase.getInstance().getReference().child("Users").child(userId)
                 .child("profileImage").get()
                 .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
@@ -61,11 +63,16 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                                 }
                             }
                         } catch (Exception e) {
-                            // ✅ Молча игнорируем ошибку вместо Toast
+
                             System.out.println("Failed to load profile image: " + e.getMessage());
                         }
                     }
                 });
+        holder.itemView.setOnClickListener(v ->{
+            Intent intent = new Intent(holder.itemView.getContext(), ChatActivity.class);
+            intent.putExtra("chatId", chats.get(position).getChat_id());
+            holder.itemView.getContext().startActivity(intent);
+        });
     }
 
     @Override
