@@ -10,7 +10,9 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.DividerItemDecoration;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.androidmessage1.chats.Chat;
 import com.example.androidmessage1.chats.ChatsAdapter;
@@ -48,13 +50,24 @@ public class FragmentChat extends Fragment {
             return binding.getRoot();
         }
 
-        binding.chatsRv.setLayoutManager(new LinearLayoutManager(getContext()));
-        chatsAdapter = new ChatsAdapter(chats);
-        binding.chatsRv.setAdapter(chatsAdapter);
-
+        setupRecyclerView();
         loadChats();
 
         return binding.getRoot();
+    }
+
+    private void setupRecyclerView() {
+        // Устанавливаем LinearLayoutManager
+        LinearLayoutManager layoutManager = new LinearLayoutManager(getContext());
+        binding.chatsRv.setLayoutManager(layoutManager);
+
+        // ✅ ПРОСТОЙ РАЗДЕЛИТЕЛЬ БЕЗ ОТСТУПОВ
+        DividerItemDecoration dividerItemDecoration = new DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL);
+        binding.chatsRv.addItemDecoration(dividerItemDecoration);
+
+        // Устанавливаем адаптер
+        chatsAdapter = new ChatsAdapter(chats);
+        binding.chatsRv.setAdapter(chatsAdapter);
     }
 
     private void loadChats() {
