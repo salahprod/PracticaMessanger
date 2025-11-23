@@ -4,7 +4,6 @@ import android.content.Intent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -37,40 +36,67 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
 
     @Override
     public void onBindViewHolder(@NonNull ChatViewHolder holder, int position) {
-        //  Устанавливаем имя чата
-        holder.chat_name_tv.setText(chats.get(position).getChat_name());
+        Chat chat = chats.get(position);
+
+        // ✅ Устанавливаем имя чата
+        holder.chat_name_tv.setText(chat.getChat_name());
+
+        // ✅ СБРАСЫВАЕМ АВАТАРКУ ПЕред загрузкой
+        holder.chat_iv.setImageResource(R.drawable.artem);
 
         String userId;
-        if(!chats.get(position).getUserId1().equals(FirebaseAuth.getInstance().getCurrentUser().getUid())){
-            userId = chats.get(position).getUserId1();
+        if(!chat.getUserId1().equals(FirebaseAuth.getInstance().getCurrentUser().getUid())){
+            userId = chat.getUserId1();
         }
         else {
-            userId = chats.get(position).getUserId2();
+            userId = chat.getUserId2();
         }
 
-        //  Безопасная загрузка аватарки
+        // ✅ Сохраняем позицию в final переменную
+        final int currentPosition = position;
+        final String currentUserId = userId;
+
+        // ✅ Безопасная загрузка аватарки с ПРОВЕРКОЙ ПОЗИЦИИ
         FirebaseDatabase.getInstance().getReference().child("Users").child(userId)
                 .child("profileImage").get()
                 .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
                     @Override
                     public void onComplete(@NonNull Task<DataSnapshot> task) {
                         try {
+                            // ✅ ПРОВЕРЯЕМ ЧТО ЭТОТ HOLDER ВСЕ ЕЩЕ НА ТОЙ ЖЕ ПОЗИЦИИ
+                            if (holder.getAdapterPosition() != currentPosition) {
+                                return;
+                            }
+
                             if (task.isSuccessful() && task.getResult() != null && task.getResult().getValue() != null) {
                                 String profileImageUrl = task.getResult().getValue().toString();
 
                                 if(profileImageUrl != null && !profileImageUrl.isEmpty()) {
-                                    Glide.with(holder.itemView.getContext()).load(profileImageUrl).into(holder.chat_iv);
+                                    // ✅ ЗАГРУЖАЕМ АВАТАРКУ С ОБРАБОТКОЙ ОШИБОК
+                                    Glide.with(holder.itemView.getContext())
+                                            .load(profileImageUrl)
+                                            .placeholder(R.drawable.artem)
+                                            .error(R.drawable.artem)
+                                            .into(holder.chat_iv);
+                                } else {
+                                    // ✅ ЕСЛИ ССЫЛКА ПУСТАЯ - СТАВИМ ДЕФОЛТНУЮ
+                                    holder.chat_iv.setImageResource(R.drawable.artem);
                                 }
+                            } else {
+                                // ✅ ЕСЛИ ДАННЫХ НЕТ - СТАВИМ ДЕФОЛТНУЮ
+                                holder.chat_iv.setImageResource(R.drawable.artem);
                             }
                         } catch (Exception e) {
-
+                            // ✅ ПРИ ЛЮБОЙ ОШИБКЕ - СТАВИМ ДЕФОЛТНУЮ
+                            holder.chat_iv.setImageResource(R.drawable.artem);
                             System.out.println("Failed to load profile image: " + e.getMessage());
                         }
                     }
                 });
+
         holder.itemView.setOnClickListener(v ->{
             Intent intent = new Intent(holder.itemView.getContext(), ChatActivity.class);
-            intent.putExtra("chatId", chats.get(position).getChat_id());
+            intent.putExtra("chatId", chat.getChat_id());
             holder.itemView.getContext().startActivity(intent);
         });
     }

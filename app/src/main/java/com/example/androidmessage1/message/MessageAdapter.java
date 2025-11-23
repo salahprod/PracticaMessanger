@@ -17,7 +17,6 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
 
     private List<Message> messages;
 
-    // Исправлено: должно быть MessageAdapter (без 's')
     public MessageAdapter(List<Message> messages){
         this.messages = messages;
     }
@@ -34,6 +33,38 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         Message message = messages.get(position);
         holder.messageTv.setText(message.getText());
         holder.dateTv.setText(message.getDate());
+
+        // ✅ ГРУППИРОВКА СООБЩЕНИЙ - УБИРАЕМ ЛИШНИЕ ОТСТУПЫ
+        if (position > 0) {
+            Message previousMessage = messages.get(position - 1);
+            String currentUserId = FirebaseAuth.getInstance().getCurrentUser() != null
+                    ? FirebaseAuth.getInstance().getCurrentUser().getUid()
+                    : "";
+
+            // Если предыдущее сообщение от того же пользователя и разница во времени небольшая
+            if (previousMessage.getOwnerId().equals(message.getOwnerId())) {
+                // Убираем отступы между сообщениями от одного пользователя
+                ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) holder.itemView.getLayoutParams();
+                if (params != null) {
+                    params.topMargin = 1; // Минимальный отступ
+                    holder.itemView.setLayoutParams(params);
+                }
+            } else {
+                // Сообщения от разных пользователей - обычный отступ
+                ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) holder.itemView.getLayoutParams();
+                if (params != null) {
+                    params.topMargin = 5; // Небольшой отступ
+                    holder.itemView.setLayoutParams(params);
+                }
+            }
+        } else {
+            // Первое сообщение - обычный отступ
+            ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) holder.itemView.getLayoutParams();
+            if (params != null) {
+                params.topMargin = 5;
+                holder.itemView.setLayoutParams(params);
+            }
+        }
     }
 
     @Override

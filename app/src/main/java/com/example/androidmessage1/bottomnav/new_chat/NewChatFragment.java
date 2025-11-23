@@ -155,7 +155,7 @@ public class NewChatFragment extends Fragment {
                 });
     }
 
-    // ✅ СОЗДАНИЕ НОВОГО ЧАТА
+    // ✅ СОЗДАНИЕ НОВОГО ЧАТА С lastMessageTimestamp
     private void createNewChatWithUser(String otherUserId) {
         String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
@@ -165,14 +165,18 @@ public class NewChatFragment extends Fragment {
                 .push()
                 .getKey();
 
+        // ✅ ТЕКУЩЕЕ ВРЕМЯ ДЛЯ СОРТИРОВКИ
+        long currentTime = System.currentTimeMillis();
+
         // Данные чата
         HashMap<String, Object> chatData = new HashMap<>();
         chatData.put("chat_id", chatId);
         chatData.put("user1", currentUserId);
         chatData.put("user2", otherUserId);
-        chatData.put("createdAt", System.currentTimeMillis());
+        chatData.put("createdAt", currentTime);
         chatData.put("lastMessage", "");
-        chatData.put("lastMessageTime", 0);
+        chatData.put("lastMessageTime", "");
+        chatData.put("lastMessageTimestamp", currentTime); // ✅ ДОБАВЛЯЕМ ВРЕМЕННУЮ МЕТКУ
 
         // Данные для обновления в разных местах базы
         HashMap<String, Object> updates = new HashMap<>();
