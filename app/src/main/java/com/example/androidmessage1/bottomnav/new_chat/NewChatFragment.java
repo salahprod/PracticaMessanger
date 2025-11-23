@@ -1,6 +1,7 @@
 package com.example.androidmessage1.bottomnav.new_chat;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -16,6 +17,7 @@ import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.DividerItemDecoration;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
+import com.example.androidmessage1.ChatActivity;
 import com.example.androidmessage1.databinding.FragmentNewChatBinding;
 import com.example.androidmessage1.users.User;
 import com.example.androidmessage1.users.UsersAdapter;
@@ -78,14 +80,10 @@ public class NewChatFragment extends Fragment {
     }
 
     private void setupSearch() {
-        // Изначально скрываем кнопку отмены
         binding.searchBtn.setVisibility(View.GONE);
-
-        // ТЕКСТ-ПОДСКАЗКА КОГДА СПИСОК ПУСТОЙ
         binding.emptyStateText.setVisibility(View.VISIBLE);
         binding.emptyStateText.setText("Enter username to search");
 
-        // Обработчик поиска при вводе текста
         binding.searchEt.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -95,7 +93,6 @@ public class NewChatFragment extends Fragment {
                 String query = s.toString().trim();
                 filterUsers(query);
 
-                // ПОКАЗЫВАЕМ КНОПКУ ОТМЕНЫ ТОЛЬКО КОГДА ЕСТЬ ТЕКСТ
                 if (s.length() > 0) {
                     binding.searchBtn.setVisibility(View.VISIBLE);
                     binding.emptyStateText.setVisibility(View.GONE);
@@ -110,35 +107,23 @@ public class NewChatFragment extends Fragment {
             public void afterTextChanged(Editable s) {}
         });
 
-        // ✅ ИСПРАВЛЕННЫЙ ОБРАБОТЧИК КНОПКИ ОТМЕНЫ
         binding.searchBtn.setOnClickListener(v -> {
-            // ✅ СНАЧАЛА СКРЫВАЕМ КЛАВИАТУРУ И СНИМАЕМ ФОКУС
             hideKeyboardAndClearFocus();
-
-            // ✅ ЗАТЕМ ОЧИЩАЕМ ПОЛЕ ПОИСКА
             binding.searchEt.setText("");
-
-            // Скрываем кнопку отмены
             binding.searchBtn.setVisibility(View.GONE);
-
-            // Показываем подсказку
             binding.emptyStateText.setVisibility(View.VISIBLE);
             binding.emptyStateText.setText("Enter username to search");
-
-            // Очищаем список
             filteredUsersList.clear();
             filteredUserIdsList.clear();
             updateAdapter();
         });
 
-        // ✅ УПРОЩЕННЫЙ ОБРАБОТЧИК ФОКУСА
         binding.searchEt.setOnFocusChangeListener((v, hasFocus) -> {
             if (hasFocus && !isKeyboardForcedHidden) {
                 showKeyboard();
             }
         });
 
-        // ✅ ДОПОЛНИТЕЛЬНО: ОБРАБОТЧИК КЛИКА НА ПОЛЕ ПОИСКА
         binding.searchEt.setOnClickListener(v -> {
             if (isKeyboardForcedHidden) {
                 isKeyboardForcedHidden = false;
@@ -147,41 +132,28 @@ public class NewChatFragment extends Fragment {
         });
     }
 
-    // ✅ УЛУЧШЕННЫЙ МЕТОД: Скрытие клавиатуры и снятие фокуса
     private void hideKeyboardAndClearFocus() {
         try {
             if (getActivity() != null) {
                 InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
-
-                // ✅ УСТАНАВЛИВАЕМ ФЛАГ ПЕРЕД СКРЫТИЕМ
                 isKeyboardForcedHidden = true;
-
-                // ✅ СНИМАЕМ ФОКУС С ПОЛЯ ПОИСКА
                 binding.searchEt.clearFocus();
-
-                // ✅ СКРЫВАЕМ КЛАВИАТУРУ
                 View view = getActivity().getCurrentFocus();
                 if (view != null) {
                     imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
                 }
                 imm.hideSoftInputFromWindow(binding.searchEt.getWindowToken(), 0);
-
-                // ✅ ПЕРЕДАЕМ ФОКУС КОРНЕВОМУ LAYOUT
                 binding.getRoot().requestFocus();
-
-                // ✅ СБРАСЫВАЕМ ФЛАГ ЧЕРЕЗ НЕКОТОРОЕ ВРЕМЯ
                 binding.getRoot().postDelayed(() -> {
                     isKeyboardForcedHidden = false;
                 }, 300);
             }
         } catch (Exception e) {
             e.printStackTrace();
-            // ✅ В СЛУЧАЕ ОШИБКИ ВСЕГДА СБРАСЫВАЕМ ФЛАГ
             isKeyboardForcedHidden = false;
         }
     }
 
-    // МЕТОД ДЛЯ НЕМЕДЛЕННОГО СКРЫТИЯ КЛАВИАТУРЫ
     private void hideKeyboardImmediately() {
         try {
             if (getActivity() != null) {
@@ -199,7 +171,6 @@ public class NewChatFragment extends Fragment {
         }
     }
 
-    // МЕТОД ДЛЯ ОТЛОЖЕННОГО СКРЫТИЯ КЛАВИАТУРЫ
     private void hideKeyboardDelayed() {
         try {
             if (getActivity() != null && binding != null) {
@@ -223,7 +194,6 @@ public class NewChatFragment extends Fragment {
         }
     }
 
-    // МЕТОД ДЛЯ ПОКАЗА КЛАВИАТУРЫ
     private void showKeyboard() {
         if (getActivity() != null && binding != null) {
             binding.searchEt.postDelayed(() -> {
@@ -419,6 +389,9 @@ public class NewChatFragment extends Fragment {
                 .updateChildren(updates)
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
+                        // ✅ УБРАНА АВТОМАТИЧЕСКАЯ ОТПРАВКА СООБЩЕНИЯ
+                        // Чат создается полностью пустым
+
                         Toast.makeText(getContext(), "Chat created successfully!", Toast.LENGTH_SHORT).show();
                         openChatActivity(chatId, otherUserId);
                     } else {
@@ -429,15 +402,11 @@ public class NewChatFragment extends Fragment {
     }
 
     private void openChatActivity(String chatId, String otherUserId) {
-        // TODO: Раскомментируй когда создашь ChatActivity
-        // Intent intent = new Intent(getContext(), ChatActivity.class);
-        // intent.putExtra("chatId", chatId);
-        // intent.putExtra("otherUserId", otherUserId);
-        // startActivity(intent);
+        Intent intent = new Intent(getContext(), ChatActivity.class);
+        intent.putExtra("chatId", chatId);
+        intent.putExtra("otherUserId", otherUserId);
+        startActivity(intent);
 
-        Toast.makeText(getContext(),
-                "Chat created!\nID: " + chatId +
-                        "\nWith user: " + otherUserId,
-                Toast.LENGTH_LONG).show();
+        Toast.makeText(getContext(), "Chat created!", Toast.LENGTH_SHORT).show();
     }
 }

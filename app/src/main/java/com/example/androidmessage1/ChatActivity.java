@@ -36,6 +36,7 @@ public class ChatActivity extends AppCompatActivity {
     private MessageAdapter messageAdapter;
     private List<Message> messages = new ArrayList<>();
     private ValueEventListener messagesListener;
+    private String currentUserId;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -43,9 +44,9 @@ public class ChatActivity extends AppCompatActivity {
         binding = ActivityChatBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        // Получаем данные из Intent
         chatId = getIntent().getStringExtra("chatId");
         otherUserId = getIntent().getStringExtra("otherUserId");
+        currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
         if (chatId == null) {
             Toast.makeText(this, "Chat ID is null", Toast.LENGTH_SHORT).show();
@@ -53,21 +54,20 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
-        System.out.println("✅ ChatActivity started - Chat ID: " + chatId);
-
         initializeViews();
         loadOtherUserData();
         loadMessages(chatId);
         setupKeyboardBehavior();
+
+        // ОТМЕЧАЕМ ВСЕ СООБЩЕНИЯ КАК ПРОЧИТАННЫЕ ПРИ ОТКРЫТИИ ЧАТА
+        markAllMessagesAsRead();
     }
 
     private void initializeViews() {
-        // Настройка RecyclerView
         binding.messagesRv.setLayoutManager(new LinearLayoutManager(this));
         messageAdapter = new MessageAdapter(messages);
         binding.messagesRv.setAdapter(messageAdapter);
 
-        // Автопрокрутка к новым сообщениям
         messageAdapter.registerAdapterDataObserver(new androidx.recyclerview.widget.RecyclerView.AdapterDataObserver() {
             @Override
             public void onItemRangeInserted(int positionStart, int itemCount) {
@@ -75,15 +75,47 @@ public class ChatActivity extends AppCompatActivity {
             }
         });
 
-        // Обработчики кликов
         binding.sendMessageBtn.setOnClickListener(v -> sendMessage());
         binding.exitBtn.setOnClickListener(v -> exitToMainActivity());
         binding.sendVideoBtn.setOnClickListener(v ->
                 Toast.makeText(this, "Video feature coming soon", Toast.LENGTH_SHORT).show());
     }
 
+    private void markAllMessagesAsRead() {
+        FirebaseDatabase.getInstance().getReference("Chats")
+                .child(chatId)
+                .child("messages")
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        HashMap<String, Object> updates = new HashMap<>();
+
+                        for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
+                            String messageId = messageSnapshot.getKey();
+                            String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
+                            Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
+
+                            if (messageId != null && ownerId != null &&
+                                    !ownerId.equals(currentUserId) &&
+                                    (isRead == null || !isRead)) {
+
+                                updates.put("Chats/" + chatId + "/messages/" + messageId + "/isRead", true);
+                            }
+                        }
+
+                        if (!updates.isEmpty()) {
+                            FirebaseDatabase.getInstance().getReference()
+                                    .updateChildren(updates);
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                    }
+                });
+    }
+
     private void setupKeyboardBehavior() {
-        // Автоматически показываем клавиатуру при открытии чата
         binding.messageEt.postDelayed(() -> {
             binding.messageEt.requestFocus();
             InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
@@ -92,24 +124,22 @@ public class ChatActivity extends AppCompatActivity {
             }
         }, 200);
 
-        // Слушатель изменений клавиатуры
         binding.getRoot().getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
             private int previousHeight = 0;
 
             @Override
             public void onGlobalLayout() {
                 int heightDiff = binding.getRoot().getRootView().getHeight() - binding.getRoot().getHeight();
-                if (Math.abs(heightDiff - previousHeight) > 100) { // Клавиатура изменила состояние
+                if (Math.abs(heightDiff - previousHeight) > 100) {
                     previousHeight = heightDiff;
 
-                    if (heightDiff > 400) { // Клавиатура открыта
+                    if (heightDiff > 400) {
                         binding.messagesRv.postDelayed(() -> scrollToBottom(), 100);
                     }
                 }
             }
         });
 
-        // Прокрутка при фокусе на поле ввода
         binding.messageEt.setOnFocusChangeListener((v, hasFocus) -> {
             if (hasFocus) {
                 binding.messagesRv.postDelayed(() -> scrollToBottom(), 200);
@@ -133,10 +163,8 @@ public class ChatActivity extends AppCompatActivity {
         SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm");
         String date = dateFormat.format(new Date());
 
-        // Очищаем поле ввода сразу
         binding.messageEt.setText("");
 
-        String currentUserId = Objects.requireNonNull(FirebaseAuth.getInstance().getCurrentUser()).getUid();
         String messageKey = FirebaseDatabase.getInstance()
                 .getReference("Chats")
                 .child(chatId)
@@ -154,6 +182,7 @@ public class ChatActivity extends AppCompatActivity {
         messageInfo.put("ownerId", currentUserId);
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
+        messageInfo.put("isRead", true);
 
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
@@ -164,7 +193,6 @@ public class ChatActivity extends AppCompatActivity {
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
                         updateLastMessage(messageText, date);
-                        System.out.println("✅ Message sent: " + messageText);
                     } else {
                         Toast.makeText(this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
                     }
@@ -230,7 +258,6 @@ public class ChatActivity extends AppCompatActivity {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         if (snapshot.exists()) {
-                            String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
                             String userId1 = snapshot.child("user1").getValue(String.class);
                             String userId2 = snapshot.child("user2").getValue(String.class);
 
@@ -270,7 +297,8 @@ public class ChatActivity extends AppCompatActivity {
                         String date = messageSnapshot.child("date").getValue(String.class);
 
                         if (messageId != null && ownerId != null && text != null && date != null) {
-                            messages.add(new Message(messageId, ownerId, text, date));
+                            Message message = new Message(messageId, ownerId, text, date);
+                            messages.add(message);
                         }
                     }
                 }
@@ -293,7 +321,6 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void exitToMainActivity() {
-        // Скрываем клавиатуру перед выходом
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null && binding.messageEt.hasFocus()) {
             imm.hideSoftInputFromWindow(binding.messageEt.getWindowToken(), 0);

@@ -30,7 +30,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     @NonNull
     @Override
     public ChatViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.person_item_rv,parent,false);
+        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.person_item_rv, parent, false);
         return new ChatViewHolder(view);
     }
 
@@ -38,32 +38,41 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     public void onBindViewHolder(@NonNull ChatViewHolder holder, int position) {
         Chat chat = chats.get(position);
 
-        // ✅ Устанавливаем имя чата
-        holder.chat_name_tv.setText(chat.getChat_name());
+        // Устанавливаем имя чата
+        holder.username_tv.setText(chat.getChat_name());
 
-        // ✅ СБРАСЫВАЕМ АВАТАРКУ ПЕред загрузкой
-        holder.chat_iv.setImageResource(R.drawable.artem);
+        // Отображаем количество непрочитанных сообщений
+        int unreadCount = chat.getUnreadCount();
+        if (unreadCount > 0) {
+            holder.message_count_badge.setVisibility(View.VISIBLE);
+            holder.message_count_badge.setText(String.valueOf(unreadCount));
+            if (unreadCount > 99) {
+                holder.message_count_badge.setText("99+");
+            }
+        } else {
+            holder.message_count_badge.setVisibility(View.GONE);
+        }
+
+        // Сбрасываем аватарку перед загрузкой
+        holder.profile_iv.setImageResource(R.drawable.artem);
 
         String userId;
-        if(!chat.getUserId1().equals(FirebaseAuth.getInstance().getCurrentUser().getUid())){
-            userId = chat.getUserId1();
-        }
-        else {
-            userId = chat.getUserId2();
+        if (!chat.getOther_user_id().equals(FirebaseAuth.getInstance().getCurrentUser().getUid())) {
+            userId = chat.getOther_user_id();
+        } else {
+            userId = chat.getCurrent_user_id();
         }
 
-        // ✅ Сохраняем позицию в final переменную
         final int currentPosition = position;
         final String currentUserId = userId;
 
-        // ✅ Безопасная загрузка аватарки с ПРОВЕРКОЙ ПОЗИЦИИ
+        // Загрузка аватарки
         FirebaseDatabase.getInstance().getReference().child("Users").child(userId)
                 .child("profileImage").get()
                 .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
                     @Override
                     public void onComplete(@NonNull Task<DataSnapshot> task) {
                         try {
-                            // ✅ ПРОВЕРЯЕМ ЧТО ЭТОТ HOLDER ВСЕ ЕЩЕ НА ТОЙ ЖЕ ПОЗИЦИИ
                             if (holder.getAdapterPosition() != currentPosition) {
                                 return;
                             }
@@ -71,32 +80,28 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                             if (task.isSuccessful() && task.getResult() != null && task.getResult().getValue() != null) {
                                 String profileImageUrl = task.getResult().getValue().toString();
 
-                                if(profileImageUrl != null && !profileImageUrl.isEmpty()) {
-                                    // ✅ ЗАГРУЖАЕМ АВАТАРКУ С ОБРАБОТКОЙ ОШИБОК
+                                if (profileImageUrl != null && !profileImageUrl.isEmpty()) {
                                     Glide.with(holder.itemView.getContext())
                                             .load(profileImageUrl)
                                             .placeholder(R.drawable.artem)
                                             .error(R.drawable.artem)
-                                            .into(holder.chat_iv);
+                                            .into(holder.profile_iv);
                                 } else {
-                                    // ✅ ЕСЛИ ССЫЛКА ПУСТАЯ - СТАВИМ ДЕФОЛТНУЮ
-                                    holder.chat_iv.setImageResource(R.drawable.artem);
+                                    holder.profile_iv.setImageResource(R.drawable.artem);
                                 }
                             } else {
-                                // ✅ ЕСЛИ ДАННЫХ НЕТ - СТАВИМ ДЕФОЛТНУЮ
-                                holder.chat_iv.setImageResource(R.drawable.artem);
+                                holder.profile_iv.setImageResource(R.drawable.artem);
                             }
                         } catch (Exception e) {
-                            // ✅ ПРИ ЛЮБОЙ ОШИБКЕ - СТАВИМ ДЕФОЛТНУЮ
-                            holder.chat_iv.setImageResource(R.drawable.artem);
-                            System.out.println("Failed to load profile image: " + e.getMessage());
+                            holder.profile_iv.setImageResource(R.drawable.artem);
                         }
                     }
                 });
 
-        holder.itemView.setOnClickListener(v ->{
+        holder.itemView.setOnClickListener(v -> {
             Intent intent = new Intent(holder.itemView.getContext(), ChatActivity.class);
             intent.putExtra("chatId", chat.getChat_id());
+            intent.putExtra("otherUserId", chat.getOther_user_id());
             holder.itemView.getContext().startActivity(intent);
         });
     }
