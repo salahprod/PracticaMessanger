@@ -1,9 +1,13 @@
 package com.example.androidmessage1.bottomnav.new_chat;
 
+import android.content.Context;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -29,32 +33,270 @@ public class NewChatFragment extends Fragment {
     private FragmentNewChatBinding binding;
     private ArrayList<User> usersList = new ArrayList<>();
     private ArrayList<String> userIdsList = new ArrayList<>();
+    private ArrayList<User> filteredUsersList = new ArrayList<>();
+    private ArrayList<String> filteredUserIdsList = new ArrayList<>();
+    private boolean isKeyboardForcedHidden = false;
 
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         binding = FragmentNewChatBinding.inflate(inflater, container, false);
 
-        binding.userRv.setLayoutManager(new LinearLayoutManager(getContext()));
-        binding.userRv.addItemDecoration(
-                new DividerItemDecoration(getContext(), DividerItemDecoration.VERTICAL));
-
+        setupRecyclerView();
+        setupSearch();
         loadUsers();
 
         return binding.getRoot();
     }
 
+    @Override
+    public void onPause() {
+        super.onPause();
+        hideKeyboardDelayed();
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        hideKeyboardImmediately();
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        hideKeyboardImmediately();
+        binding = null;
+    }
+
+    private void setupRecyclerView() {
+        binding.userRv.setLayoutManager(new LinearLayoutManager(getContext()));
+        binding.userRv.addItemDecoration(
+                new DividerItemDecoration(getContext(), DividerItemDecoration.VERTICAL));
+
+        UsersAdapter emptyAdapter = new UsersAdapter(new ArrayList<>(), null);
+        binding.userRv.setAdapter(emptyAdapter);
+    }
+
+    private void setupSearch() {
+        // Изначально скрываем кнопку отмены
+        binding.searchBtn.setVisibility(View.GONE);
+
+        // ТЕКСТ-ПОДСКАЗКА КОГДА СПИСОК ПУСТОЙ
+        binding.emptyStateText.setVisibility(View.VISIBLE);
+        binding.emptyStateText.setText("Enter username to search");
+
+        // Обработчик поиска при вводе текста
+        binding.searchEt.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String query = s.toString().trim();
+                filterUsers(query);
+
+                // ПОКАЗЫВАЕМ КНОПКУ ОТМЕНЫ ТОЛЬКО КОГДА ЕСТЬ ТЕКСТ
+                if (s.length() > 0) {
+                    binding.searchBtn.setVisibility(View.VISIBLE);
+                    binding.emptyStateText.setVisibility(View.GONE);
+                } else {
+                    binding.searchBtn.setVisibility(View.GONE);
+                    binding.emptyStateText.setVisibility(View.VISIBLE);
+                    binding.emptyStateText.setText("Enter username to search");
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+
+        // ✅ ИСПРАВЛЕННЫЙ ОБРАБОТЧИК КНОПКИ ОТМЕНЫ
+        binding.searchBtn.setOnClickListener(v -> {
+            // ✅ СНАЧАЛА СКРЫВАЕМ КЛАВИАТУРУ И СНИМАЕМ ФОКУС
+            hideKeyboardAndClearFocus();
+
+            // ✅ ЗАТЕМ ОЧИЩАЕМ ПОЛЕ ПОИСКА
+            binding.searchEt.setText("");
+
+            // Скрываем кнопку отмены
+            binding.searchBtn.setVisibility(View.GONE);
+
+            // Показываем подсказку
+            binding.emptyStateText.setVisibility(View.VISIBLE);
+            binding.emptyStateText.setText("Enter username to search");
+
+            // Очищаем список
+            filteredUsersList.clear();
+            filteredUserIdsList.clear();
+            updateAdapter();
+        });
+
+        // ✅ УПРОЩЕННЫЙ ОБРАБОТЧИК ФОКУСА
+        binding.searchEt.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus && !isKeyboardForcedHidden) {
+                showKeyboard();
+            }
+        });
+
+        // ✅ ДОПОЛНИТЕЛЬНО: ОБРАБОТЧИК КЛИКА НА ПОЛЕ ПОИСКА
+        binding.searchEt.setOnClickListener(v -> {
+            if (isKeyboardForcedHidden) {
+                isKeyboardForcedHidden = false;
+                showKeyboard();
+            }
+        });
+    }
+
+    // ✅ УЛУЧШЕННЫЙ МЕТОД: Скрытие клавиатуры и снятие фокуса
+    private void hideKeyboardAndClearFocus() {
+        try {
+            if (getActivity() != null) {
+                InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
+
+                // ✅ УСТАНАВЛИВАЕМ ФЛАГ ПЕРЕД СКРЫТИЕМ
+                isKeyboardForcedHidden = true;
+
+                // ✅ СНИМАЕМ ФОКУС С ПОЛЯ ПОИСКА
+                binding.searchEt.clearFocus();
+
+                // ✅ СКРЫВАЕМ КЛАВИАТУРУ
+                View view = getActivity().getCurrentFocus();
+                if (view != null) {
+                    imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+                }
+                imm.hideSoftInputFromWindow(binding.searchEt.getWindowToken(), 0);
+
+                // ✅ ПЕРЕДАЕМ ФОКУС КОРНЕВОМУ LAYOUT
+                binding.getRoot().requestFocus();
+
+                // ✅ СБРАСЫВАЕМ ФЛАГ ЧЕРЕЗ НЕКОТОРОЕ ВРЕМЯ
+                binding.getRoot().postDelayed(() -> {
+                    isKeyboardForcedHidden = false;
+                }, 300);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            // ✅ В СЛУЧАЕ ОШИБКИ ВСЕГДА СБРАСЫВАЕМ ФЛАГ
+            isKeyboardForcedHidden = false;
+        }
+    }
+
+    // МЕТОД ДЛЯ НЕМЕДЛЕННОГО СКРЫТИЯ КЛАВИАТУРЫ
+    private void hideKeyboardImmediately() {
+        try {
+            if (getActivity() != null) {
+                InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
+                View view = getActivity().getCurrentFocus();
+                if (view != null) {
+                    imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+                }
+                if (binding != null && binding.searchEt.hasFocus()) {
+                    imm.hideSoftInputFromWindow(binding.searchEt.getWindowToken(), 0);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // МЕТОД ДЛЯ ОТЛОЖЕННОГО СКРЫТИЯ КЛАВИАТУРЫ
+    private void hideKeyboardDelayed() {
+        try {
+            if (getActivity() != null && binding != null) {
+                binding.searchEt.postDelayed(() -> {
+                    try {
+                        InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
+                        View view = getActivity().getCurrentFocus();
+                        if (view != null) {
+                            imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+                        }
+                        if (binding.searchEt.hasFocus()) {
+                            imm.hideSoftInputFromWindow(binding.searchEt.getWindowToken(), 0);
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }, 50);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // МЕТОД ДЛЯ ПОКАЗА КЛАВИАТУРЫ
+    private void showKeyboard() {
+        if (getActivity() != null && binding != null) {
+            binding.searchEt.postDelayed(() -> {
+                try {
+                    InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
+                    binding.searchEt.requestFocus();
+                    imm.showSoftInput(binding.searchEt, InputMethodManager.SHOW_IMPLICIT);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }, 100);
+        }
+    }
+
+    private void filterUsers(String query) {
+        if (binding == null) return;
+
+        filteredUsersList.clear();
+        filteredUserIdsList.clear();
+
+        if (query.isEmpty()) {
+            binding.emptyStateText.setVisibility(View.VISIBLE);
+            binding.emptyStateText.setText("Enter username to search");
+        } else {
+            String lowerCaseQuery = query.toLowerCase();
+            for (int i = 0; i < usersList.size(); i++) {
+                User user = usersList.get(i);
+                if (user.getUsername().toLowerCase().contains(lowerCaseQuery)) {
+                    filteredUsersList.add(user);
+                    filteredUserIdsList.add(userIdsList.get(i));
+                }
+            }
+
+            if (filteredUsersList.isEmpty()) {
+                binding.emptyStateText.setVisibility(View.VISIBLE);
+                binding.emptyStateText.setText("\n" + "No users found");
+            } else {
+                binding.emptyStateText.setVisibility(View.GONE);
+            }
+        }
+
+        updateAdapter();
+    }
+
+    private void updateAdapter() {
+        if (binding == null) return;
+
+        UsersAdapter adapter = new UsersAdapter(filteredUsersList, new UsersAdapter.OnUserClickListener() {
+            @Override
+            public void onUserClick(int position) {
+                if (position < 0 || position >= filteredUserIdsList.size()) return;
+
+                String selectedUserId = filteredUserIdsList.get(position);
+                checkIfChatExistsBeforeCreate(selectedUserId);
+            }
+        });
+        binding.userRv.setAdapter(adapter);
+    }
+
     private void loadUsers() {
+        if (binding == null) return;
+
         FirebaseDatabase.getInstance().getReference()
                 .child("Users")
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (binding == null) return;
+
                         usersList.clear();
                         userIdsList.clear();
 
                         String currentUserEmail = FirebaseAuth.getInstance().getCurrentUser().getEmail();
-                        System.out.println("Текущий пользователь Email: " + currentUserEmail);
 
                         for (DataSnapshot userSnapshot : snapshot.getChildren()) {
                             String userId = userSnapshot.getKey();
@@ -67,7 +309,6 @@ public class NewChatFragment extends Fragment {
                             }
 
                             if (currentUserEmail != null && currentUserEmail.equals(userEmail)) {
-                                System.out.println("Пропущен свой аккаунт: " + userLogin);
                                 continue;
                             }
 
@@ -78,45 +319,41 @@ public class NewChatFragment extends Fragment {
 
                             usersList.add(new User(userLogin, profileImage));
                             userIdsList.add(userId);
-
-                            System.out.println("Загружен пользователь: " + userLogin + " | ID: " + userId);
                         }
 
-                        UsersAdapter adapter = new UsersAdapter(usersList, new UsersAdapter.OnUserClickListener() {
-                            @Override
-                            public void onUserClick(int position) {
-                                String selectedUserId = userIdsList.get(position);
-                                checkIfChatExistsBeforeCreate(selectedUserId);
-                            }
-                        });
-                        binding.userRv.setAdapter(adapter);
+                        filteredUsersList.clear();
+                        filteredUserIdsList.clear();
 
                         if (usersList.isEmpty()) {
-                            Toast.makeText(getContext(), "Другие пользователи не найдены", Toast.LENGTH_SHORT).show();
+                            binding.emptyStateText.setText("\n" + "No users found");
                         } else {
-                            Toast.makeText(getContext(), "Загружено пользователей: " + usersList.size(), Toast.LENGTH_SHORT).show();
+                            binding.emptyStateText.setText("Enter username to search");
                         }
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
+                        if (binding == null) return;
+
                         Toast.makeText(getContext(), "Ошибка загрузки", Toast.LENGTH_SHORT).show();
-                        System.out.println("Ошибка БД: " + error.getMessage());
+                        binding.emptyStateText.setText("Ошибка загрузки пользователей");
                     }
                 });
     }
 
-    // ✅ ИСПРАВЛЕННЫЙ МЕТОД: Проверяем чат в обе стороны (user1-user2 и user2-user1)
     private void checkIfChatExistsBeforeCreate(String otherUserId) {
+        if (binding == null) return;
+
         String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
-        // Блокируем кнопку на время проверки
         binding.userRv.setEnabled(false);
 
         FirebaseDatabase.getInstance().getReference("Chats")
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (binding == null) return;
+
                         boolean chatExists = false;
                         String existingChatId = null;
 
@@ -125,7 +362,6 @@ public class NewChatFragment extends Fragment {
                             String user2 = chatSnapshot.child("user2").getValue(String.class);
 
                             if (user1 != null && user2 != null) {
-                                // Проверяем оба варианта: current-user1 + other-user2 И current-user2 + other-user1
                                 if ((user1.equals(currentUserId) && user2.equals(otherUserId)) ||
                                         (user1.equals(otherUserId) && user2.equals(currentUserId))) {
                                     chatExists = true;
@@ -138,37 +374,33 @@ public class NewChatFragment extends Fragment {
                         binding.userRv.setEnabled(true);
 
                         if (chatExists) {
-                            // Чат уже существует
-                            Toast.makeText(getContext(), "Чат с этим пользователем уже существует", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(getContext(), "A chat with this user already exists.", Toast.LENGTH_SHORT).show();
                             openChatActivity(existingChatId, otherUserId);
                         } else {
-                            // Создаем новый чат
                             createNewChatWithUser(otherUserId);
                         }
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
+                        if (binding == null) return;
+
                         binding.userRv.setEnabled(true);
                         Toast.makeText(getContext(), "Ошибка проверки чата", Toast.LENGTH_SHORT).show();
                     }
                 });
     }
 
-    // ✅ СОЗДАНИЕ НОВОГО ЧАТА С lastMessageTimestamp
     private void createNewChatWithUser(String otherUserId) {
         String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
-        // Генерируем ID чата
         String chatId = FirebaseDatabase.getInstance()
                 .getReference("Chats")
                 .push()
                 .getKey();
 
-        // ✅ ТЕКУЩЕЕ ВРЕМЯ ДЛЯ СОРТИРОВКИ
         long currentTime = System.currentTimeMillis();
 
-        // Данные чата
         HashMap<String, Object> chatData = new HashMap<>();
         chatData.put("chat_id", chatId);
         chatData.put("user1", currentUserId);
@@ -176,24 +408,18 @@ public class NewChatFragment extends Fragment {
         chatData.put("createdAt", currentTime);
         chatData.put("lastMessage", "");
         chatData.put("lastMessageTime", "");
-        chatData.put("lastMessageTimestamp", currentTime); // ✅ ДОБАВЛЯЕМ ВРЕМЕННУЮ МЕТКУ
+        chatData.put("lastMessageTimestamp", currentTime);
 
-        // Данные для обновления в разных местах базы
         HashMap<String, Object> updates = new HashMap<>();
-
-        // 1. Записываем сам чат
         updates.put("Chats/" + chatId, chatData);
-
-        // 2. Добавляем ссылки на чаты у пользователей
         updates.put("Users/" + currentUserId + "/chats/" + chatId, true);
         updates.put("Users/" + otherUserId + "/chats/" + chatId, true);
 
-        // Выполняем все обновления атомарно
         FirebaseDatabase.getInstance().getReference()
                 .updateChildren(updates)
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
-                        Toast.makeText(getContext(), "Чат создан успешно!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), "Chat created successfully!", Toast.LENGTH_SHORT).show();
                         openChatActivity(chatId, otherUserId);
                     } else {
                         Toast.makeText(getContext(), "Ошибка создания чата: " +
@@ -203,23 +429,15 @@ public class NewChatFragment extends Fragment {
     }
 
     private void openChatActivity(String chatId, String otherUserId) {
-        // TODO: Создай ChatActivity и раскомментируй
+        // TODO: Раскомментируй когда создашь ChatActivity
         // Intent intent = new Intent(getContext(), ChatActivity.class);
         // intent.putExtra("chatId", chatId);
         // intent.putExtra("otherUserId", otherUserId);
         // startActivity(intent);
 
         Toast.makeText(getContext(),
-                "Чат создан!\nID: " + chatId +
-                        "\nС пользователем: " + otherUserId,
+                "Chat created!\nID: " + chatId +
+                        "\nWith user: " + otherUserId,
                 Toast.LENGTH_LONG).show();
-
-        System.out.println("Чат создан: " + chatId + " с пользователем: " + otherUserId);
-    }
-
-    @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        binding = null;
     }
 }

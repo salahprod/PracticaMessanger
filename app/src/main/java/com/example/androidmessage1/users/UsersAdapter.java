@@ -16,12 +16,10 @@ public class UsersAdapter extends RecyclerView.Adapter<UserViewHolder> {
     private ArrayList<User> users = new ArrayList<>();
     private OnUserClickListener listener;
 
-    // ✅ ДОБАВЬ этот интерфейс
     public interface OnUserClickListener {
         void onUserClick(int position);
     }
 
-    // ✅ ОБНОВИ конструктор
     public UsersAdapter(ArrayList<User> users, OnUserClickListener listener) {
         this.users = users;
         this.listener = listener;
@@ -37,13 +35,17 @@ public class UsersAdapter extends RecyclerView.Adapter<UserViewHolder> {
     @Override
     public void onBindViewHolder(@NonNull UserViewHolder holder, int position) {
         User user = users.get(position);
-        holder.username_tv.setText(user.username);
 
-        if(!user.profileImage.isEmpty()){
-            Glide.with(holder.itemView.getContext()).load(user.profileImage).into(holder.profileImage_iv);
+        // ✅ ИСПОЛЬЗУЙ ГЕТТЕР вместо прямого доступа
+        holder.username_tv.setText(user.getUsername());
+
+        // ✅ ИСПОЛЬЗУЙ ГЕТТЕР вместо прямого доступа
+        if(!user.getProfileImage().isEmpty()){
+            Glide.with(holder.itemView.getContext())
+                    .load(user.getProfileImage())
+                    .into(holder.profileImage_iv);
         }
 
-        // ✅ ОБНОВИ: добавляем обработчик клика
         holder.itemView.setOnClickListener(v -> {
             if (listener != null) {
                 listener.onUserClick(position);

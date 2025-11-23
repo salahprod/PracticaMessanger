@@ -2,14 +2,13 @@ package com.example.androidmessage1;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.View;
+import android.view.ViewTreeObserver;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Toast;
 
-import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.bumptech.glide.Glide;
@@ -42,160 +41,102 @@ public class ChatActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         binding = ActivityChatBinding.inflate(getLayoutInflater());
-        EdgeToEdge.enable(this);
         setContentView(binding.getRoot());
-
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-            return insets;
-        });
 
         // Получаем данные из Intent
         chatId = getIntent().getStringExtra("chatId");
         otherUserId = getIntent().getStringExtra("otherUserId");
 
-        // Загружаем данные собеседника
-        loadOtherUserData();
+        if (chatId == null) {
+            Toast.makeText(this, "Chat ID is null", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
 
-        // Инициализация RecyclerView
+        System.out.println("✅ ChatActivity started - Chat ID: " + chatId);
+
+        initializeViews();
+        loadOtherUserData();
+        loadMessages(chatId);
+        setupKeyboardBehavior();
+    }
+
+    private void initializeViews() {
+        // Настройка RecyclerView
         binding.messagesRv.setLayoutManager(new LinearLayoutManager(this));
         messageAdapter = new MessageAdapter(messages);
         binding.messagesRv.setAdapter(messageAdapter);
 
-        // Загружаем сообщения
-        loadMessages(chatId);
-
-        // Обработчик отправки сообщения
-        binding.sendMessageBtn.setOnClickListener(v -> {
-            String messageText = binding.messageEt.getText().toString().trim();
-            if (messageText.isEmpty()) {
-                Toast.makeText(this, "Message field cannot be empty", Toast.LENGTH_SHORT).show();
-                return;
+        // Автопрокрутка к новым сообщениям
+        messageAdapter.registerAdapterDataObserver(new androidx.recyclerview.widget.RecyclerView.AdapterDataObserver() {
+            @Override
+            public void onItemRangeInserted(int positionStart, int itemCount) {
+                scrollToBottom();
             }
-
-            SimpleDateFormat simpleDateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm");
-            String date = simpleDateFormat.format(new Date());
-
-            binding.messageEt.setText("");
-            sendMessage(chatId, messageText, date);
         });
 
-        // ОБРАБОТЧИК КНОПКИ ВЫХОДА
-        binding.exitBtn.setOnClickListener(v -> {
-            exitToMainActivity();
+        // Обработчики кликов
+        binding.sendMessageBtn.setOnClickListener(v -> sendMessage());
+        binding.exitBtn.setOnClickListener(v -> exitToMainActivity());
+        binding.sendVideoBtn.setOnClickListener(v ->
+                Toast.makeText(this, "Video feature coming soon", Toast.LENGTH_SHORT).show());
+    }
+
+    private void setupKeyboardBehavior() {
+        // Автоматически показываем клавиатуру при открытии чата
+        binding.messageEt.postDelayed(() -> {
+            binding.messageEt.requestFocus();
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(binding.messageEt, InputMethodManager.SHOW_IMPLICIT);
+            }
+        }, 200);
+
+        // Слушатель изменений клавиатуры
+        binding.getRoot().getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            private int previousHeight = 0;
+
+            @Override
+            public void onGlobalLayout() {
+                int heightDiff = binding.getRoot().getRootView().getHeight() - binding.getRoot().getHeight();
+                if (Math.abs(heightDiff - previousHeight) > 100) { // Клавиатура изменила состояние
+                    previousHeight = heightDiff;
+
+                    if (heightDiff > 400) { // Клавиатура открыта
+                        binding.messagesRv.postDelayed(() -> scrollToBottom(), 100);
+                    }
+                }
+            }
+        });
+
+        // Прокрутка при фокусе на поле ввода
+        binding.messageEt.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                binding.messagesRv.postDelayed(() -> scrollToBottom(), 200);
+            }
         });
     }
 
-    // МЕТОД ВЫХОДА В MAIN ACTIVITY
-    private void exitToMainActivity() {
-        // Закрываем текущую активность и возвращаемся в MainActivity
-        Intent intent = new Intent(ChatActivity.this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(intent);
-        finish();
-
-        // Можно добавить анимацию перехода
-        //overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+    private void scrollToBottom() {
+        if (messages.size() > 0) {
+            binding.messagesRv.scrollToPosition(messages.size() - 1);
+        }
     }
 
-    // Загрузка данных собеседника (аватарка и никнейм)
-    private void loadOtherUserData() {
-        if (otherUserId == null) {
-            // Если otherUserId не передан, получаем его из данных чата
-            getOtherUserIdFromChat();
+    private void sendMessage() {
+        String messageText = binding.messageEt.getText().toString().trim();
+        if (messageText.isEmpty()) {
+            Toast.makeText(this, "Message cannot be empty", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        FirebaseDatabase.getInstance().getReference("Users").child(otherUserId)
-                .addListenerForSingleValueEvent(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        if (snapshot.exists()) {
-                            // Получаем никнейм
-                            String username = snapshot.child("login").getValue(String.class);
-                            if (username != null) {
-                                binding.chatUserName.setText(username);
-                            } else {
-                                // Если нет логина, используем email
-                                String email = snapshot.child("email").getValue(String.class);
-                                if (email != null && email.contains("@")) {
-                                    binding.chatUserName.setText(email.substring(0, email.indexOf("@")));
-                                } else {
-                                    binding.chatUserName.setText("Unknown User");
-                                }
-                            }
+        SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm");
+        String date = dateFormat.format(new Date());
 
-                            // Получаем аватарку
-                            String profileImage = snapshot.child("profileImage").getValue(String.class);
-                            if (profileImage != null && !profileImage.isEmpty()) {
-                                Glide.with(ChatActivity.this)
-                                        .load(profileImage)
-                                        .placeholder(R.drawable.artem)
-                                        .error(R.drawable.artem)
-                                        .into(binding.chatUserAvatar);
-                            } else {
-                                // Устанавливаем дефолтную аватарку
-                                binding.chatUserAvatar.setImageResource(R.drawable.artem);
-                            }
-                        } else {
-                            binding.chatUserName.setText("Unknown User");
-                        }
-                    }
-
-                    @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        Toast.makeText(ChatActivity.this, "Failed to load user data", Toast.LENGTH_SHORT).show();
-                        binding.chatUserName.setText("Unknown User");
-                    }
-                });
-    }
-
-    // Получение ID собеседника из данных чата
-    private void getOtherUserIdFromChat() {
-        if (chatId == null) {
-            Toast.makeText(this, "Chat ID is null", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        FirebaseDatabase.getInstance().getReference("Chats").child(chatId)
-                .addListenerForSingleValueEvent(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        if (snapshot.exists()) {
-                            String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
-                            String userId1 = snapshot.child("user1").getValue(String.class);
-                            String userId2 = snapshot.child("user2").getValue(String.class);
-
-                            if (userId1 != null && userId2 != null) {
-                                otherUserId = userId1.equals(currentUserId) ? userId2 : userId1;
-                                loadOtherUserData(); // Загружаем данные после получения ID
-                            } else {
-                                binding.chatUserName.setText("Unknown User");
-                            }
-                        } else {
-                            binding.chatUserName.setText("Unknown User");
-                        }
-                    }
-
-                    @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        Toast.makeText(ChatActivity.this, "Failed to load chat data", Toast.LENGTH_SHORT).show();
-                        binding.chatUserName.setText("Unknown User");
-                    }
-                });
-    }
-
-    // Отправка сообщения
-    private void sendMessage(String chatId, String message, String date) {
-        if (chatId == null) {
-            Toast.makeText(this, "Chat ID is null", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        // Очищаем поле ввода сразу
+        binding.messageEt.setText("");
 
         String currentUserId = Objects.requireNonNull(FirebaseAuth.getInstance().getCurrentUser()).getUid();
-
-        // Создаем уникальный ключ для сообщения
         String messageKey = FirebaseDatabase.getInstance()
                 .getReference("Chats")
                 .child(chatId)
@@ -208,14 +149,12 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
-        // Данные сообщения
         HashMap<String, Object> messageInfo = new HashMap<>();
-        messageInfo.put("text", message);
+        messageInfo.put("text", messageText);
         messageInfo.put("ownerId", currentUserId);
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
 
-        // Сохраняем сообщение в Firebase
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
                 .child(chatId)
@@ -224,17 +163,15 @@ public class ChatActivity extends AppCompatActivity {
                 .setValue(messageInfo)
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
-                        // Обновляем последнее сообщение в чате
-                        updateLastMessage(chatId, message, date);
-                        System.out.println("✅ Сообщение отправлено: " + message);
+                        updateLastMessage(messageText, date);
+                        System.out.println("✅ Message sent: " + messageText);
                     } else {
-                        Toast.makeText(this, "Ошибка отправки: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
                     }
                 });
     }
 
-    // Обновление последнего сообщения в чате
-    private void updateLastMessage(String chatId, String lastMessage, String date) {
+    private void updateLastMessage(String lastMessage, String date) {
         HashMap<String, Object> updateData = new HashMap<>();
         updateData.put("lastMessage", lastMessage);
         updateData.put("lastMessageTime", date);
@@ -243,24 +180,75 @@ public class ChatActivity extends AppCompatActivity {
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
                 .child(chatId)
-                .updateChildren(updateData)
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        System.out.println("✅ Последнее сообщение обновлено");
-                    } else {
-                        System.out.println("❌ Ошибка обновления последнего сообщения");
+                .updateChildren(updateData);
+    }
+
+    private void loadOtherUserData() {
+        if (otherUserId == null) {
+            getOtherUserIdFromChat();
+            return;
+        }
+
+        FirebaseDatabase.getInstance().getReference("Users").child(otherUserId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (snapshot.exists()) {
+                            String username = snapshot.child("login").getValue(String.class);
+                            if (username != null) {
+                                binding.chatUserName.setText(username);
+                            } else {
+                                String email = snapshot.child("email").getValue(String.class);
+                                if (email != null && email.contains("@")) {
+                                    binding.chatUserName.setText(email.substring(0, email.indexOf("@")));
+                                } else {
+                                    binding.chatUserName.setText("Unknown User");
+                                }
+                            }
+
+                            String profileImage = snapshot.child("profileImage").getValue(String.class);
+                            if (profileImage != null && !profileImage.isEmpty()) {
+                                Glide.with(ChatActivity.this)
+                                        .load(profileImage)
+                                        .placeholder(R.drawable.artem)
+                                        .error(R.drawable.artem)
+                                        .into(binding.chatUserAvatar);
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Toast.makeText(ChatActivity.this, "Failed to load user data", Toast.LENGTH_SHORT).show();
                     }
                 });
     }
 
-    // Загрузка сообщений в реальном времени
-    private void loadMessages(String chatId) {
-        if (chatId == null) {
-            Toast.makeText(this, "Chat ID is null", Toast.LENGTH_SHORT).show();
-            return;
-        }
+    private void getOtherUserIdFromChat() {
+        FirebaseDatabase.getInstance().getReference("Chats").child(chatId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (snapshot.exists()) {
+                            String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                            String userId1 = snapshot.child("user1").getValue(String.class);
+                            String userId2 = snapshot.child("user2").getValue(String.class);
 
-        // Удаляем старый слушатель если есть
+                            if (userId1 != null && userId2 != null) {
+                                otherUserId = userId1.equals(currentUserId) ? userId2 : userId1;
+                                loadOtherUserData();
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Toast.makeText(ChatActivity.this, "Failed to load chat data", Toast.LENGTH_SHORT).show();
+                    }
+                });
+    }
+
+    private void loadMessages(String chatId) {
         if (messagesListener != null) {
             FirebaseDatabase.getInstance()
                     .getReference("Chats")
@@ -269,45 +257,34 @@ public class ChatActivity extends AppCompatActivity {
                     .removeEventListener(messagesListener);
         }
 
-        // Создаем новый слушатель для реального времени
         messagesListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 messages.clear();
 
-                if (!snapshot.exists()) {
-                    System.out.println("❌ Нет сообщений в чате: " + chatId);
-                    messageAdapter.notifyDataSetChanged();
-                    return;
-                }
+                if (snapshot.exists()) {
+                    for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
+                        String messageId = messageSnapshot.getKey();
+                        String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
+                        String text = messageSnapshot.child("text").getValue(String.class);
+                        String date = messageSnapshot.child("date").getValue(String.class);
 
-                for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
-                    String messageId = messageSnapshot.getKey();
-                    String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
-                    String text = messageSnapshot.child("text").getValue(String.class);
-                    String date = messageSnapshot.child("date").getValue(String.class);
-
-                    if (messageId != null && ownerId != null && text != null && date != null) {
-                        messages.add(new Message(messageId, ownerId, text, date));
+                        if (messageId != null && ownerId != null && text != null && date != null) {
+                            messages.add(new Message(messageId, ownerId, text, date));
+                        }
                     }
                 }
 
-                // Обновляем адаптер
                 messageAdapter.notifyDataSetChanged();
-
-                // Прокручиваем к последнему сообщению
-                if (messages.size() > 0) {
-                    binding.messagesRv.scrollToPosition(messages.size() - 1);
-                }
+                scrollToBottom();
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
-                Toast.makeText(ChatActivity.this, "Ошибка загрузки сообщений: " + error.getMessage(), Toast.LENGTH_SHORT).show();
+                Toast.makeText(ChatActivity.this, "Failed to load messages", Toast.LENGTH_SHORT).show();
             }
         };
 
-        // Подключаем слушатель
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
                 .child(chatId)
@@ -315,10 +292,22 @@ public class ChatActivity extends AppCompatActivity {
                 .addValueEventListener(messagesListener);
     }
 
+    private void exitToMainActivity() {
+        // Скрываем клавиатуру перед выходом
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null && binding.messageEt.hasFocus()) {
+            imm.hideSoftInputFromWindow(binding.messageEt.getWindowToken(), 0);
+        }
+
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        finish();
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Удаляем слушатель при закрытии активности
         if (messagesListener != null && chatId != null) {
             FirebaseDatabase.getInstance()
                     .getReference("Chats")

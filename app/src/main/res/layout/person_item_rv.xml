@@ -5,34 +5,48 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:paddingTop="10dp"
-    android:paddingBottom="10dp"
-    >
-
+    android:paddingBottom="10dp">
 
     <de.hdodenhof.circleimageview.CircleImageView
         android:id="@+id/profile_iv"
         android:layout_width="50dp"
         android:layout_height="50dp"
         android:layout_marginStart="15dp"
-
         android:src="@drawable/artem"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        />
+        app:layout_constraintTop_toTopOf="parent" />
 
     <TextView
-        android:layout_width="wrap_content"
+        android:id="@+id/username_tv"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:id = "@+id/username_tv"
-        tools:text="Username"
-        android:fontFamily="@font/montserrat_medium"
         android:layout_marginStart="70dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="@+id/profile_iv"
-        app:layout_constraintTop_toTopOf="parent"
+        android:layout_marginEnd="70dp"
+        android:fontFamily="@font/montserrat_medium"
+        android:text="Username"
         android:textSize="20sp"
-        />
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/message_count_badge"
+        app:layout_constraintStart_toStartOf="@+id/profile_iv"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Бейдж общего количества сообщений (справа) -->
+    <TextView
+        android:id="@+id/message_count_badge"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/unread_badge_background"
+        android:gravity="center"
+        android:text="0"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
 
 
 </androidx.constraintlayout.widget.ConstraintLayout>
