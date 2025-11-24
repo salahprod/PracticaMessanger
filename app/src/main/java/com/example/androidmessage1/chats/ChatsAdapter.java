@@ -22,9 +22,11 @@ import java.util.ArrayList;
 public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
 
     private ArrayList<Chat> chats;
+    private String currentUserId;
 
     public ChatsAdapter(ArrayList<Chat> chats){
         this.chats = chats;
+        this.currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
     }
 
     @NonNull
@@ -41,6 +43,16 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         // Устанавливаем имя чата
         holder.username_tv.setText(chat.getChat_name());
 
+        // Устанавливаем последнее сообщение
+        String lastMessage = chat.getLastMessage();
+        if (lastMessage != null && !lastMessage.isEmpty()) {
+            holder.last_message_tv.setText(lastMessage);
+            holder.last_message_tv.setVisibility(View.VISIBLE);
+        } else {
+            holder.last_message_tv.setText("No messages");
+            holder.last_message_tv.setVisibility(View.VISIBLE);
+        }
+
         // Отображаем количество непрочитанных сообщений
         int unreadCount = chat.getUnreadCount();
         if (unreadCount > 0) {
@@ -49,30 +61,34 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             if (unreadCount > 99) {
                 holder.message_count_badge.setText("99+");
             }
+
+            // Подсвечиваем последнее сообщение если есть непрочитанные
+            holder.last_message_tv.setTextColor(holder.itemView.getContext().getColor(android.R.color.black));
+            holder.last_message_tv.setTypeface(holder.last_message_tv.getTypeface(), android.graphics.Typeface.BOLD);
         } else {
             holder.message_count_badge.setVisibility(View.GONE);
+
+            // Обычный стиль для прочитанных сообщений
+            holder.last_message_tv.setTextColor(holder.itemView.getContext().getColor(android.R.color.darker_gray));
+            holder.last_message_tv.setTypeface(holder.last_message_tv.getTypeface(), android.graphics.Typeface.NORMAL);
         }
 
         // Сбрасываем аватарку перед загрузкой
         holder.profile_iv.setImageResource(R.drawable.artem);
 
-        String userId;
-        if (!chat.getOther_user_id().equals(FirebaseAuth.getInstance().getCurrentUser().getUid())) {
-            userId = chat.getOther_user_id();
-        } else {
-            userId = chat.getCurrent_user_id();
-        }
+        // Правильно определяем ID пользователя для загрузки аватарки
+        String userIdForAvatar = chat.getOther_user_id();
 
         final int currentPosition = position;
-        final String currentUserId = userId;
 
         // Загрузка аватарки
-        FirebaseDatabase.getInstance().getReference().child("Users").child(userId)
+        FirebaseDatabase.getInstance().getReference().child("Users").child(userIdForAvatar)
                 .child("profileImage").get()
                 .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
                     @Override
                     public void onComplete(@NonNull Task<DataSnapshot> task) {
                         try {
+                            // Проверяем, что позиция не изменилась
                             if (holder.getAdapterPosition() != currentPosition) {
                                 return;
                             }
@@ -109,5 +125,12 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     @Override
     public int getItemCount() {
         return chats.size();
+    }
+
+    // Метод для обновления списка чатов
+    public void updateChats(ArrayList<Chat> newChats) {
+        this.chats.clear();
+        this.chats.addAll(newChats);
+        notifyDataSetChanged();
     }
 }

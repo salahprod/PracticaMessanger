@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -38,11 +39,14 @@ public class NewChatFragment extends Fragment {
     private ArrayList<User> filteredUsersList = new ArrayList<>();
     private ArrayList<String> filteredUserIdsList = new ArrayList<>();
     private boolean isKeyboardForcedHidden = false;
+    private String currentUserId;
 
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         binding = FragmentNewChatBinding.inflate(inflater, container, false);
+
+        currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
         setupRecyclerView();
         setupSearch();
@@ -287,12 +291,15 @@ public class NewChatFragment extends Fragment {
                                 profileImage = "";
                             }
 
-                            usersList.add(new User(userLogin, profileImage));
+                            // Создаем пользователя с базовой информацией
+                            User user = new User(userLogin, profileImage);
+
+                            // Загружаем информацию о чате с этим пользователем
+                            loadChatInfoForUser(user, userId);
+
+                            usersList.add(user);
                             userIdsList.add(userId);
                         }
-
-                        filteredUsersList.clear();
-                        filteredUserIdsList.clear();
 
                         if (usersList.isEmpty()) {
                             binding.emptyStateText.setText("\n" + "No users found");
@@ -311,10 +318,74 @@ public class NewChatFragment extends Fragment {
                 });
     }
 
+    private void loadChatInfoForUser(User user, String otherUserId) {
+        FirebaseDatabase.getInstance().getReference("Chats")
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        for (DataSnapshot chatSnapshot : snapshot.getChildren()) {
+                            String user1 = chatSnapshot.child("user1").getValue(String.class);
+                            String user2 = chatSnapshot.child("user2").getValue(String.class);
+
+                            if (user1 != null && user2 != null) {
+                                if ((user1.equals(currentUserId) && user2.equals(otherUserId)) ||
+                                        (user1.equals(otherUserId) && user2.equals(currentUserId))) {
+
+                                    // Нашли чат с этим пользователем
+                                    String lastMessage = chatSnapshot.child("LastMessage").getValue(String.class);
+                                    if (lastMessage != null && !lastMessage.isEmpty()) {
+                                        user.setLastMessage(lastMessage);
+                                    }
+
+                                    // Подсчитываем непрочитанные сообщения
+                                    countUnreadMessages(chatSnapshot.getKey(), otherUserId, user);
+                                    break;
+                                }
+                            }
+                        }
+                        updateAdapter();
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Log.e("NewChatFragment", "Failed to load chat info", error.toException());
+                    }
+                });
+    }
+
+    private void countUnreadMessages(String chatId, String otherUserId, User user) {
+        FirebaseDatabase.getInstance().getReference("Chats")
+                .child(chatId)
+                .child("messages")
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        int unreadCount = 0;
+
+                        for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
+                            String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
+                            Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
+
+                            if (ownerId != null && ownerId.equals(otherUserId)) {
+                                if (isRead == null || !isRead) {
+                                    unreadCount++;
+                                }
+                            }
+                        }
+
+                        user.setUnreadCount(unreadCount);
+                        updateAdapter();
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Log.e("NewChatFragment", "Failed to count unread messages", error.toException());
+                    }
+                });
+    }
+
     private void checkIfChatExistsBeforeCreate(String otherUserId) {
         if (binding == null) return;
-
-        String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
         binding.userRv.setEnabled(false);
 
@@ -344,7 +415,7 @@ public class NewChatFragment extends Fragment {
                         binding.userRv.setEnabled(true);
 
                         if (chatExists) {
-                            Toast.makeText(getContext(), "A chat with this user already exists.", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(getContext(), "Opening existing chat", Toast.LENGTH_SHORT).show();
                             openChatActivity(existingChatId, otherUserId);
                         } else {
                             createNewChatWithUser(otherUserId);
@@ -362,8 +433,6 @@ public class NewChatFragment extends Fragment {
     }
 
     private void createNewChatWithUser(String otherUserId) {
-        String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
-
         String chatId = FirebaseDatabase.getInstance()
                 .getReference("Chats")
                 .push()
@@ -372,26 +441,23 @@ public class NewChatFragment extends Fragment {
         long currentTime = System.currentTimeMillis();
 
         HashMap<String, Object> chatData = new HashMap<>();
-        chatData.put("chat_id", chatId);
         chatData.put("user1", currentUserId);
         chatData.put("user2", otherUserId);
         chatData.put("createdAt", currentTime);
-        chatData.put("lastMessage", "");
-        chatData.put("lastMessageTime", "");
+        chatData.put("LastMessage", "");
+        chatData.put("LastMessageTime", currentTime);
         chatData.put("lastMessageTimestamp", currentTime);
+
+        HashMap<String, Object> messagesData = new HashMap<>();
+        chatData.put("messages", messagesData);
 
         HashMap<String, Object> updates = new HashMap<>();
         updates.put("Chats/" + chatId, chatData);
-        updates.put("Users/" + currentUserId + "/chats/" + chatId, true);
-        updates.put("Users/" + otherUserId + "/chats/" + chatId, true);
 
         FirebaseDatabase.getInstance().getReference()
                 .updateChildren(updates)
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
-                        // ✅ УБРАНА АВТОМАТИЧЕСКАЯ ОТПРАВКА СООБЩЕНИЯ
-                        // Чат создается полностью пустым
-
                         Toast.makeText(getContext(), "Chat created successfully!", Toast.LENGTH_SHORT).show();
                         openChatActivity(chatId, otherUserId);
                     } else {
@@ -406,7 +472,6 @@ public class NewChatFragment extends Fragment {
         intent.putExtra("chatId", chatId);
         intent.putExtra("otherUserId", otherUserId);
         startActivity(intent);
-
-        Toast.makeText(getContext(), "Chat created!", Toast.LENGTH_SHORT).show();
+        hideKeyboardImmediately();
     }
 }

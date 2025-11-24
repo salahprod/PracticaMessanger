@@ -14,12 +14,15 @@ public class ChatViewHolder extends RecyclerView.ViewHolder {
 
     public CircleImageView profile_iv;
     public TextView username_tv;
+    public TextView last_message_tv;
     public TextView message_count_badge;
 
     public ChatViewHolder(@NonNull View itemView) {
         super(itemView);
+
         profile_iv = itemView.findViewById(R.id.profile_iv);
         username_tv = itemView.findViewById(R.id.username_tv);
+        last_message_tv = itemView.findViewById(R.id.last_message_tv);
         message_count_badge = itemView.findViewById(R.id.message_count_badge);
     }
 }

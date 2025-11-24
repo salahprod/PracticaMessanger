@@ -1,32 +1,39 @@
 package com.example.androidmessage1.users;
 
 public class User {
-    String username, profileImage;
+    private String username;
+    private String profileImage;
+    private String lastMessage;
+    private int unreadCount;
 
     public User() {
-
+        // Default constructor
     }
 
     public User(String username, String profileImage) {
         this.username = username;
         this.profileImage = profileImage;
+        this.lastMessage = "";
+        this.unreadCount = 0;
     }
 
-    // ✅ ДОБАВЬ ГЕТТЕРЫ
-    public String getUsername() {
-        return username;
-    }
-
-    public String getProfileImage() {
-        return profileImage;
-    }
-
-    // ✅ ДОБАВЬ СЕТТЕРЫ
-    public void setUsername(String username) {
+    public User(String username, String profileImage, String lastMessage, int unreadCount) {
         this.username = username;
+        this.profileImage = profileImage;
+        this.lastMessage = lastMessage;
+        this.unreadCount = unreadCount;
     }
 
-    public void setProfileImage(String profileImage) {
-        this.profileImage = profileImage;
-    }
+    // Getters and Setters
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
+
+    public String getProfileImage() { return profileImage; }
+    public void setProfileImage(String profileImage) { this.profileImage = profileImage; }
+
+    public String getLastMessage() { return lastMessage; }
+    public void setLastMessage(String lastMessage) { this.lastMessage = lastMessage; }
+
+    public int getUnreadCount() { return unreadCount; }
+    public void setUnreadCount(int unreadCount) { this.unreadCount = unreadCount; }
 }

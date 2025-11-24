@@ -2,6 +2,7 @@ package com.example.androidmessage1;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.inputmethod.InputMethodManager;
@@ -26,7 +27,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Objects;
 
 public class ChatActivity extends AppCompatActivity {
 
@@ -55,12 +55,15 @@ public class ChatActivity extends AppCompatActivity {
         }
 
         initializeViews();
-        loadOtherUserData();
-        loadMessages(chatId);
-        setupKeyboardBehavior();
 
-        // ОТМЕЧАЕМ ВСЕ СООБЩЕНИЯ КАК ПРОЧИТАННЫЕ ПРИ ОТКРЫТИИ ЧАТА
-        markAllMessagesAsRead();
+        if (otherUserId == null) {
+            getOtherUserIdFromChat();
+        } else {
+            loadOtherUserData();
+            loadMessages();
+            setupKeyboardBehavior();
+            markAllMessagesAsRead();
+        }
     }
 
     private void initializeViews() {
@@ -82,13 +85,24 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void markAllMessagesAsRead() {
+        if (chatId == null || otherUserId == null) {
+            Log.e("ChatActivity", "chatId or otherUserId is null");
+            return;
+        }
+
+        final String currentChatId = this.chatId;
+        final String currentOtherUserId = this.otherUserId;
+
+        Log.d("ChatActivity", "Marking all messages as read in chat: " + currentChatId);
+
         FirebaseDatabase.getInstance().getReference("Chats")
-                .child(chatId)
+                .child(currentChatId)
                 .child("messages")
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         HashMap<String, Object> updates = new HashMap<>();
+                        final int[] markedAsRead = {0};
 
                         for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
                             String messageId = messageSnapshot.getKey();
@@ -96,21 +110,31 @@ public class ChatActivity extends AppCompatActivity {
                             Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
 
                             if (messageId != null && ownerId != null &&
-                                    !ownerId.equals(currentUserId) &&
+                                    ownerId.equals(currentOtherUserId) &&
                                     (isRead == null || !isRead)) {
 
-                                updates.put("Chats/" + chatId + "/messages/" + messageId + "/isRead", true);
+                                updates.put("Chats/" + currentChatId + "/messages/" + messageId + "/isRead", true);
+                                markedAsRead[0]++;
+                                Log.d("ChatActivity", "Marking message as read: " + messageId);
                             }
                         }
 
                         if (!updates.isEmpty()) {
                             FirebaseDatabase.getInstance().getReference()
-                                    .updateChildren(updates);
+                                    .updateChildren(updates)
+                                    .addOnCompleteListener(task -> {
+                                        if (task.isSuccessful()) {
+                                            Log.d("ChatActivity", "Successfully marked " + markedAsRead[0] + " messages as read");
+                                        } else {
+                                            Log.e("ChatActivity", "Failed to mark messages as read", task.getException());
+                                        }
+                                    });
                         }
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
+                        Log.e("ChatActivity", "Failed to mark messages as read", error.toException());
                     }
                 });
     }
@@ -124,7 +148,7 @@ public class ChatActivity extends AppCompatActivity {
             }
         }, 200);
 
-        binding.getRoot().getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+        final ViewTreeObserver.OnGlobalLayoutListener layoutListener = new ViewTreeObserver.OnGlobalLayoutListener() {
             private int previousHeight = 0;
 
             @Override
@@ -138,7 +162,9 @@ public class ChatActivity extends AppCompatActivity {
                     }
                 }
             }
-        });
+        };
+
+        binding.getRoot().getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
 
         binding.messageEt.setOnFocusChangeListener((v, hasFocus) -> {
             if (hasFocus) {
@@ -165,9 +191,11 @@ public class ChatActivity extends AppCompatActivity {
 
         binding.messageEt.setText("");
 
+        final String currentChatId = this.chatId;
+
         String messageKey = FirebaseDatabase.getInstance()
                 .getReference("Chats")
-                .child(chatId)
+                .child(currentChatId)
                 .child("messages")
                 .push()
                 .getKey();
@@ -182,42 +210,64 @@ public class ChatActivity extends AppCompatActivity {
         messageInfo.put("ownerId", currentUserId);
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
-        messageInfo.put("isRead", true);
+        messageInfo.put("isRead", false); // Сообщения от других пользователей будут false
 
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
-                .child(chatId)
+                .child(currentChatId)
                 .child("messages")
                 .child(messageKey)
                 .setValue(messageInfo)
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
-                        updateLastMessage(messageText, date);
+                        // ОБНОВЛЯЕМ ПОСЛЕДНЕЕ СООБЩЕНИЕ В ЧАТЕ
+                        updateLastMessageInChat(messageText, System.currentTimeMillis());
+                        // Свои сообщения сразу помечаем как прочитанные
+                        markOwnMessageAsRead(messageKey);
                     } else {
-                        Toast.makeText(this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
+                        Toast.makeText(ChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
                     }
                 });
     }
 
-    private void updateLastMessage(String lastMessage, String date) {
+    private void markOwnMessageAsRead(String messageKey) {
+        final String currentChatId = this.chatId;
+
+        FirebaseDatabase.getInstance().getReference("Chats")
+                .child(currentChatId)
+                .child("messages")
+                .child(messageKey)
+                .child("isRead")
+                .setValue(true);
+    }
+
+    private void updateLastMessageInChat(String lastMessage, long timestamp) {
+        final String currentChatId = this.chatId;
+
         HashMap<String, Object> updateData = new HashMap<>();
-        updateData.put("lastMessage", lastMessage);
-        updateData.put("lastMessageTime", date);
-        updateData.put("lastMessageTimestamp", System.currentTimeMillis());
+        updateData.put("LastMessage", lastMessage);
+        updateData.put("LastMessageTime", timestamp);
+        updateData.put("lastMessageTimestamp", timestamp);
 
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
-                .child(chatId)
-                .updateChildren(updateData);
+                .child(currentChatId)
+                .updateChildren(updateData)
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        Log.d("ChatActivity", "Last message updated: " + lastMessage);
+                    } else {
+                        Log.e("ChatActivity", "Failed to update last message", task.getException());
+                    }
+                });
     }
 
     private void loadOtherUserData() {
-        if (otherUserId == null) {
-            getOtherUserIdFromChat();
-            return;
-        }
+        if (otherUserId == null) return;
 
-        FirebaseDatabase.getInstance().getReference("Users").child(otherUserId)
+        final String currentOtherUserId = this.otherUserId;
+
+        FirebaseDatabase.getInstance().getReference("Users").child(currentOtherUserId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
@@ -253,7 +303,10 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void getOtherUserIdFromChat() {
-        FirebaseDatabase.getInstance().getReference("Chats").child(chatId)
+        final String currentChatId = this.chatId;
+        final String currentCurrentUserId = this.currentUserId;
+
+        FirebaseDatabase.getInstance().getReference("Chats").child(currentChatId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
@@ -262,8 +315,13 @@ public class ChatActivity extends AppCompatActivity {
                             String userId2 = snapshot.child("user2").getValue(String.class);
 
                             if (userId1 != null && userId2 != null) {
-                                otherUserId = userId1.equals(currentUserId) ? userId2 : userId1;
+                                String newOtherUserId = userId1.equals(currentCurrentUserId) ? userId2 : userId1;
+                                otherUserId = newOtherUserId;
+
                                 loadOtherUserData();
+                                loadMessages();
+                                setupKeyboardBehavior();
+                                markAllMessagesAsRead();
                             }
                         }
                     }
@@ -275,11 +333,16 @@ public class ChatActivity extends AppCompatActivity {
                 });
     }
 
-    private void loadMessages(String chatId) {
+    private void loadMessages() {
+        if (chatId == null || otherUserId == null) return;
+
+        final String currentChatId = this.chatId;
+        final String currentOtherUserId = this.otherUserId;
+
         if (messagesListener != null) {
             FirebaseDatabase.getInstance()
                     .getReference("Chats")
-                    .child(chatId)
+                    .child(currentChatId)
                     .child("messages")
                     .removeEventListener(messagesListener);
         }
@@ -295,10 +358,16 @@ public class ChatActivity extends AppCompatActivity {
                         String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
                         String text = messageSnapshot.child("text").getValue(String.class);
                         String date = messageSnapshot.child("date").getValue(String.class);
+                        Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
 
                         if (messageId != null && ownerId != null && text != null && date != null) {
                             Message message = new Message(messageId, ownerId, text, date);
                             messages.add(message);
+
+                            // Автоматически помечаем входящие сообщения как прочитанные при загрузке
+                            if (ownerId.equals(currentOtherUserId) && (isRead == null || !isRead)) {
+                                markSingleMessageAsRead(messageId);
+                            }
                         }
                     }
                 }
@@ -315,12 +384,43 @@ public class ChatActivity extends AppCompatActivity {
 
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
-                .child(chatId)
+                .child(currentChatId)
                 .child("messages")
                 .addValueEventListener(messagesListener);
     }
 
+    private void markSingleMessageAsRead(String messageId) {
+        final String currentChatId = this.chatId;
+
+        FirebaseDatabase.getInstance().getReference("Chats")
+                .child(currentChatId)
+                .child("messages")
+                .child(messageId)
+                .child("isRead")
+                .setValue(true);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (chatId != null && otherUserId != null) {
+            markAllMessagesAsRead();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (chatId != null && otherUserId != null) {
+            markAllMessagesAsRead();
+        }
+    }
+
     private void exitToMainActivity() {
+        if (chatId != null && otherUserId != null) {
+            markAllMessagesAsRead();
+        }
+
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null && binding.messageEt.hasFocus()) {
             imm.hideSoftInputFromWindow(binding.messageEt.getWindowToken(), 0);
