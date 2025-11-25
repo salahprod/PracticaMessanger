@@ -20,6 +20,15 @@
             android:name=".PoliticalActivity"
             android:exported="false" />
         <activity
+            android:name=".groups.CreateGroupActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+
+        <activity
+            android:name=".groups.GroupChatActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+        <activity
             android:name=".RegisterActivity"
             android:exported="false" /> <!-- Сделайте LoginActivity запускаемой -->
         <activity

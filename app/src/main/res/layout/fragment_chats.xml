@@ -6,8 +6,55 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:context="bottomnav.chats.FragmentChat">
 
+    <!-- Заголовок Chats слева вверху -->
+
+    <!-- Кнопка создания групп справа вверху -->
+    <TextView
+        android:id="@+id/chats_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="16dp"
+        android:text="Chats"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <ImageButton
+        android:id="@+id/create_group_btn"
+        android:layout_width="124dp"
+        android:layout_height="60dp"
+        android:layout_marginEnd="4dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Create group"
+        android:scaleType="fitCenter"
+        android:src="@drawable/create_group_btn"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Разделительная линия под заголовком -->
+    <View
+        android:id="@+id/divider_line"
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:background="#E0E0E0"
+        android:layout_marginTop="8dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/chats_title" />
+
+    <!-- RecyclerView для списка чатов -->
     <androidx.recyclerview.widget.RecyclerView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:id = "@+id/chats_rv"/>
+        android:id="@+id/chats_rv"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.0"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/divider_line"
+        app:layout_constraintVertical_bias="0.0" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>

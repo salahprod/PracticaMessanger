@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".GroupChatActivity">
+
+    <!-- Шапка группового чата с информацией -->
+    <LinearLayout
+        android:id="@+id/chat_header"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:background="#FFFFFF"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:elevation="4dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageButton
+            android:id="@+id/exit_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-16dp"
+            android:layout_marginTop="0dp"
+            android:backgroundTint="@android:color/transparent"
+            android:src="@drawable/key_exit"
+            android:contentDescription="Exit group chat"
+            />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp">
+
+            <TextView
+                android:id="@+id/group_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/montserrat_extrabold"
+                android:text="Group Name"
+                android:textColor="#000000"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:id="@+id/members_count"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="5 members"
+                    android:textColor="#666666"
+                    android:textSize="12sp"
+                    android:maxLines="1" />
+
+                <View
+                    android:layout_width="4dp"
+                    android:layout_height="4dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="#666666"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/online_count"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="3 online"
+                    android:textColor="#4CAF50"
+                    android:textSize="12sp"
+                    android:maxLines="1" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <de.hdodenhof.circleimageview.CircleImageView
+            android:id="@+id/group_image"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:contentDescription="Group avatar"
+            android:src="@drawable/artem" />
+
+    </LinearLayout>
+
+    <!-- Список сообщений -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/messages_rv"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:padding="0dp"
+        android:clipToPadding="false"
+        app:layout_constraintTop_toBottomOf="@+id/chat_header"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/message_et" />
+
+    <!-- Панель ввода сообщения -->
+    <EditText
+        android:id="@+id/message_et"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/message_et_shape"
+        android:hint="Type your message..."
+        android:padding="13dp"
+        android:textSize="14dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/send_video_btn"
+        app:layout_constraintEnd_toStartOf="@+id/send_message_btn" />
+
+    <ImageButton
+        android:id="@+id/send_message_btn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="4dp"
+        android:src="@drawable/send_btn"
+        app:backgroundTint="@android:color/transparent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <ImageButton
+        android:id="@+id/send_video_btn"
+        android:layout_width="52dp"
+        android:layout_height="51dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginBottom="4dp"
+        android:src="@drawable/send_vid_btn"
+        app:backgroundTint="@android:color/transparent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

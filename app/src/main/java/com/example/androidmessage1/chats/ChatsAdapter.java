@@ -1,6 +1,7 @@
 package com.example.androidmessage1.chats;
 
 import android.content.Intent;
+import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -120,6 +121,10 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             intent.putExtra("otherUserId", chat.getOther_user_id());
             holder.itemView.getContext().startActivity(intent);
         });
+        if (chat.isGroup()) {
+            // Отображаем иконку группы или другую визуальную подсказку
+            holder.itemView.setBackgroundColor(Color.LTGRAY); // например
+        }
     }
 
     @Override

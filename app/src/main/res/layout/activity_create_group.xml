@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/white">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@android:color/white">
+
+        <!-- Header -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="?attr/colorPrimary"
+            android:paddingHorizontal="16dp">
+
+            <!-- Кнопка назад слева -->
+            <ImageButton
+                android:id="@+id/back_btn"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/key_exit"
+                android:tint="@android:color/white"
+                android:layout_centerVertical="true" />
+
+            <!-- Заголовок по центру -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Create New Group"
+                android:textColor="@android:color/white"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_centerInParent="true" />
+
+            <!-- Кнопка создания группы справа (изначально скрыта) -->
+            <Button
+                android:id="@+id/create_group_btn"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="Create"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white"
+                android:background="@drawable/rounded_create_button"
+                android:visibility="gone"
+                android:layout_centerVertical="true"
+                android:layout_alignParentEnd="true"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp" />
+
+        </RelativeLayout>
+
+        <!-- Group Info Section -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <!-- Group Image -->
+            <LinearLayout
+                android:id="@+id/group_image_layout"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_gravity="center_horizontal"
+                android:gravity="center"
+                android:padding="16dp">
+
+                <de.hdodenhof.circleimageview.CircleImageView
+                    android:id="@+id/group_image"
+                    android:layout_width="120dp"
+                    android:layout_height="120dp"
+                    android:src="@drawable/artem"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Add Group Photo"
+                    android:textColor="?attr/colorPrimary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+
+            <!-- Group Name -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                app:boxCornerRadiusBottomEnd="16dp"
+                app:boxCornerRadiusBottomStart="16dp"
+                app:boxCornerRadiusTopEnd="16dp"
+                app:boxCornerRadiusTopStart="16dp"
+                app:boxStrokeColor="#E0E0E0"
+                app:hintTextColor="#666666">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/group_name_et"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Group Name"
+                    android:textSize="16sp"
+                    android:maxLines="1"
+                    android:paddingVertical="16dp" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+        </LinearLayout>
+
+        <!-- Search Section -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="24dp"
+            android:paddingTop="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Add Members"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/black"
+                android:layout_marginBottom="16dp" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                app:boxCornerRadiusBottomEnd="16dp"
+                app:boxCornerRadiusBottomStart="16dp"
+                app:boxCornerRadiusTopEnd="16dp"
+                app:boxCornerRadiusTopStart="16dp"
+                app:boxStrokeColor="#E0E0E0"
+                app:hintTextColor="#666666">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/search_et"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Search users"
+                    android:textSize="16sp"
+                    android:maxLines="1"
+                    android:paddingVertical="16dp" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:id="@+id/selected_count"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:text="Select at least 1 member"
+                android:textColor="#666666"
+                android:textSize="14sp" />
+
+        </LinearLayout>
+
+        <!-- Users List -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/users_rv"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp"
+            android:background="@android:color/white" />
+
+        <ProgressBar
+            android:id="@+id/progress_bar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginBottom="24dp"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+</ScrollView>

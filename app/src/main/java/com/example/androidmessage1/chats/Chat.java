@@ -1,6 +1,8 @@
 package com.example.androidmessage1.chats;
 
 public class Chat {
+
+    private boolean isGroup;
     private String chat_id;
     private String other_user_id;
     private String current_user_id;
@@ -41,12 +43,18 @@ public class Chat {
     public String getLastMessage() { return lastMessage; }
     public void setLastMessage(String lastMessage) { this.lastMessage = lastMessage; }
 
+    public boolean isGroup() {
+        return isGroup;
+    }
     public String getLastMessageTime() { return lastMessageTime; }
     public void setLastMessageTime(String lastMessageTime) { this.lastMessageTime = lastMessageTime; }
 
     public long getLastMessageTimestamp() { return lastMessageTimestamp; }
     public void setLastMessageTimestamp(long lastMessageTimestamp) { this.lastMessageTimestamp = lastMessageTimestamp; }
 
+    public void setGroup(boolean group) {
+        isGroup = group;
+    }
     public int getUnreadCount() { return unreadCount; }
     public void setUnreadCount(int unreadCount) { this.unreadCount = unreadCount; }
 
