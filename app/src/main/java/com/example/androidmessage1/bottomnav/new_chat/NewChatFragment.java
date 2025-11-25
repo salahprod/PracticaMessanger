@@ -30,8 +30,11 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.Locale;
 
 public class NewChatFragment extends Fragment {
 
@@ -43,6 +46,25 @@ public class NewChatFragment extends Fragment {
     private ArrayList<User> searchResults = new ArrayList<>();
     private boolean isKeyboardForcedHidden = false;
     private String currentUserId;
+
+    // HashMap для хранения статусов пользователей
+    private HashMap<String, UserStatus> userStatusMap = new HashMap<>();
+
+    private class UserStatus {
+        boolean isOnline;
+        long lastOnline;
+        String lastOnlineTime;
+        String lastOnlineDate;
+        boolean hasOnlineData; // Флаг, что у пользователя есть данные о статусе
+
+        UserStatus(boolean isOnline, long lastOnline, String lastOnlineTime, String lastOnlineDate, boolean hasOnlineData) {
+            this.isOnline = isOnline;
+            this.lastOnline = lastOnline;
+            this.lastOnlineTime = lastOnlineTime;
+            this.lastOnlineDate = lastOnlineDate;
+            this.hasOnlineData = hasOnlineData;
+        }
+    }
 
     @Nullable
     @Override
@@ -152,6 +174,14 @@ public class NewChatFragment extends Fragment {
         for (int i = 0; i < usersList.size(); i++) {
             User user = usersList.get(i);
             if (user.getUsername().toLowerCase().contains(lowerCaseQuery)) {
+                // Добавляем статус пользователю
+                String userId = userIdsList.get(i);
+                UserStatus status = userStatusMap.get(userId);
+                if (status != null) {
+                    user.setLastMessage(formatUserStatus(status));
+                } else {
+                    user.setLastMessage("offline");
+                }
                 searchResults.add(user);
             }
         }
@@ -186,6 +216,59 @@ public class NewChatFragment extends Fragment {
         }
 
         updateAdapter();
+    }
+
+    private String formatUserStatus(UserStatus status) {
+        if (!status.hasOnlineData) {
+            return "offline"; // Пользователь никогда не был онлайн
+        }
+
+        if (status.isOnline) {
+            return "online";
+        } else {
+            return formatLastSeen(status.lastOnline, status.lastOnlineTime, status.lastOnlineDate);
+        }
+    }
+
+    private String formatLastSeen(long lastOnlineTimestamp, String lastOnlineTime, String lastOnlineDate) {
+        long currentTime = System.currentTimeMillis();
+        long diff = currentTime - lastOnlineTimestamp;
+        long minutes = diff / (60 * 1000);
+        long hours = diff / (60 * 60 * 1000);
+
+        // Получаем текущую дату и дату последней активности
+        java.util.Calendar currentCal = java.util.Calendar.getInstance();
+        java.util.Calendar lastOnlineCal = java.util.Calendar.getInstance();
+        lastOnlineCal.setTimeInMillis(lastOnlineTimestamp);
+
+        int currentDay = currentCal.get(java.util.Calendar.DAY_OF_YEAR);
+        int currentYear = currentCal.get(java.util.Calendar.YEAR);
+        int lastOnlineDay = lastOnlineCal.get(java.util.Calendar.DAY_OF_YEAR);
+        int lastOnlineYear = lastOnlineCal.get(java.util.Calendar.YEAR);
+
+        // Проверяем, был ли пользователь онлайн вчера
+        boolean isYesterday = (currentDay - lastOnlineDay == 1 && currentYear == lastOnlineYear) ||
+                (currentDay == 1 && lastOnlineDay >= 365 && currentYear - lastOnlineYear == 1);
+
+        // Проверяем, был ли пользователь онлайн позавчера или раньше
+        boolean isMoreThanTwoDays = (currentDay - lastOnlineDay > 1 && currentYear == lastOnlineYear) ||
+                (currentYear - lastOnlineYear > 0);
+
+        if (minutes < 1) {
+            return "was online just now";
+        } else if (minutes < 60) {
+            return "was online " + minutes + " minute" + (minutes > 1 ? "s" : "") + " ago";
+        } else if (hours < 24) {
+            return "was online " + hours + " hour" + (hours > 1 ? "s" : "") + " ago";
+        } else if (isYesterday) {
+            return "was online yesterday at " + (lastOnlineTime != null ? lastOnlineTime : "unknown time");
+        } else if (isMoreThanTwoDays) {
+            // Для активности старше 2 дней показываем полную дату и время
+            SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy 'at' HH:mm", Locale.getDefault());
+            return "was online " + dateFormat.format(new Date(lastOnlineTimestamp));
+        } else {
+            return "was online " + (lastOnlineTime != null ? lastOnlineTime : "unknown time") + " " + (lastOnlineDate != null ? lastOnlineDate : "");
+        }
     }
 
     private void updateAdapter() {
@@ -245,6 +328,7 @@ public class NewChatFragment extends Fragment {
 
                         usersList.clear();
                         userIdsList.clear();
+                        userStatusMap.clear();
 
                         String currentUserEmail = FirebaseAuth.getInstance().getCurrentUser().getEmail();
 
@@ -267,18 +351,111 @@ public class NewChatFragment extends Fragment {
                                 profileImage = "";
                             }
 
+                            // Загружаем статус пользователя
+                            Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
+                            Long lastOnline = userSnapshot.child("lastOnline").getValue(Long.class);
+                            String lastOnlineTime = userSnapshot.child("lastOnlineTime").getValue(String.class);
+                            String lastOnlineDate = userSnapshot.child("lastOnlineDate").getValue(String.class);
+
+                            // Проверяем, есть ли у пользователя данные о статусе
+                            boolean hasOnlineData = (isOnline != null || lastOnline != null ||
+                                    lastOnlineTime != null || lastOnlineDate != null);
+
+                            // Если данных нет, устанавливаем офлайн статус
+                            if (!hasOnlineData) {
+                                isOnline = false;
+                                lastOnline = 0L;
+                                lastOnlineTime = "";
+                                lastOnlineDate = "";
+                            } else {
+                                // Если какие-то данные есть, но не все, устанавливаем значения по умолчанию
+                                if (isOnline == null) isOnline = false;
+                                if (lastOnline == null) lastOnline = 0L;
+                                if (lastOnlineTime == null) lastOnlineTime = "";
+                                if (lastOnlineDate == null) lastOnlineDate = "";
+                            }
+
+                            // Сохраняем статус в HashMap
+                            userStatusMap.put(userId, new UserStatus(isOnline, lastOnline, lastOnlineTime, lastOnlineDate, hasOnlineData));
+
                             User user = new User(userLogin, profileImage);
+                            // Устанавливаем статус как lastMessage
+                            user.setLastMessage(formatUserStatus(userStatusMap.get(userId)));
+
                             usersList.add(user);
                             userIdsList.add(userId);
                         }
 
-                        Log.d("NewChatFragment", "Loaded " + usersList.size() + " users");
+                        Log.d("NewChatFragment", "Loaded " + usersList.size() + " users with status");
+
+                        // Запускаем слушатель для обновления статусов в реальном времени
+                        setupUserStatusListener();
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
                         if (binding == null) return;
                         Toast.makeText(getContext(), "Error loading users", Toast.LENGTH_SHORT).show();
+                    }
+                });
+    }
+
+    private void setupUserStatusListener() {
+        FirebaseDatabase.getInstance().getReference("Users")
+                .addValueEventListener(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (binding == null) return;
+
+                        for (DataSnapshot userSnapshot : snapshot.getChildren()) {
+                            String userId = userSnapshot.getKey();
+
+                            // Обновляем только существующих пользователей
+                            if (userIdsList.contains(userId)) {
+                                Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
+                                Long lastOnline = userSnapshot.child("lastOnline").getValue(Long.class);
+                                String lastOnlineTime = userSnapshot.child("lastOnlineTime").getValue(String.class);
+                                String lastOnlineDate = userSnapshot.child("lastOnlineDate").getValue(String.class);
+
+                                // Проверяем, есть ли у пользователя данные о статусе
+                                boolean hasOnlineData = (isOnline != null || lastOnline != null ||
+                                        lastOnlineTime != null || lastOnlineDate != null);
+
+                                // Если данных нет, устанавливаем офлайн статус
+                                if (!hasOnlineData) {
+                                    isOnline = false;
+                                    lastOnline = 0L;
+                                    lastOnlineTime = "";
+                                    lastOnlineDate = "";
+                                } else {
+                                    // Если какие-то данные есть, но не все, устанавливаем значения по умолчанию
+                                    if (isOnline == null) isOnline = false;
+                                    if (lastOnline == null) lastOnline = 0L;
+                                    if (lastOnlineTime == null) lastOnlineTime = "";
+                                    if (lastOnlineDate == null) lastOnlineDate = "";
+                                }
+
+                                // Обновляем статус в HashMap
+                                userStatusMap.put(userId, new UserStatus(isOnline, lastOnline, lastOnlineTime, lastOnlineDate, hasOnlineData));
+
+                                // Обновляем статус в списке пользователей
+                                int userIndex = userIdsList.indexOf(userId);
+                                if (userIndex != -1 && userIndex < usersList.size()) {
+                                    User user = usersList.get(userIndex);
+                                    user.setLastMessage(formatUserStatus(userStatusMap.get(userId)));
+                                }
+                            }
+                        }
+
+                        // Обновляем адаптер если есть активный поиск
+                        if (!binding.searchEt.getText().toString().trim().isEmpty()) {
+                            performSearch(binding.searchEt.getText().toString().trim());
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Log.e("NewChatFragment", "Failed to listen to user status updates", error.toException());
                     }
                 });
     }
