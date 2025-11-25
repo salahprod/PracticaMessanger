@@ -11,6 +11,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.DividerItemDecoration;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.bumptech.glide.Glide;
@@ -69,7 +70,12 @@ public class CreateGroupActivity extends AppCompatActivity {
 
     private void setupRecyclerView() {
         Log.d(TAG, "setupRecyclerView: Setting up recycler view");
-        binding.usersRv.setLayoutManager(new LinearLayoutManager(this));
+        LinearLayoutManager layoutManager = new LinearLayoutManager(this);
+        binding.usersRv.setLayoutManager(layoutManager);
+
+        // Добавляем разделительную линию между элементами
+        DividerItemDecoration dividerItemDecoration = new DividerItemDecoration(this, DividerItemDecoration.VERTICAL);
+        binding.usersRv.addItemDecoration(dividerItemDecoration);
 
         usersAdapter = new UsersAdapter(usersList, new UsersAdapter.OnUserClickListener() {
             @Override
@@ -223,6 +229,8 @@ public class CreateGroupActivity extends AppCompatActivity {
                 }
             }
         });
+
+        // Добавляем разделительную линию для отфильтрованного списка
         binding.usersRv.setAdapter(filteredAdapter);
     }
 
@@ -370,7 +378,6 @@ public class CreateGroupActivity extends AppCompatActivity {
 
         // Создаем приветственное сообщение как системное уведомление
         HashMap<String, Object> welcomeMessage = new HashMap<>();
-        //welcomeMessage.put("text", "Group '" + groupName + "' was created by " + getCurrentUserName());
         welcomeMessage.put("ownerId", "system");
         welcomeMessage.put("senderName", "System");
         welcomeMessage.put("senderAvatar", "");
