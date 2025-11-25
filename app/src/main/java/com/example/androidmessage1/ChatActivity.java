@@ -2,6 +2,7 @@ package com.example.androidmessage1;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewTreeObserver;
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 
 public class ChatActivity extends AppCompatActivity {
 
@@ -36,7 +38,10 @@ public class ChatActivity extends AppCompatActivity {
     private MessageAdapter messageAdapter;
     private List<Message> messages = new ArrayList<>();
     private ValueEventListener messagesListener;
+    private ValueEventListener userStatusListener;
     private String currentUserId;
+    private Handler statusUpdateHandler;
+    private Runnable statusUpdateRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,8 +68,11 @@ public class ChatActivity extends AppCompatActivity {
             loadMessages();
             setupKeyboardBehavior();
             markAllMessagesAsRead();
+            startUserStatusTracking();
         }
     }
+
+    // УДАЛЕНО: методы onStart, onStop, onResume, onPause для управления статусом
 
     private void initializeViews() {
         binding.messagesRv.setLayoutManager(new LinearLayoutManager(this));
@@ -82,6 +90,135 @@ public class ChatActivity extends AppCompatActivity {
         binding.exitBtn.setOnClickListener(v -> exitToMainActivity());
         binding.sendVideoBtn.setOnClickListener(v ->
                 Toast.makeText(this, "Video feature coming soon", Toast.LENGTH_SHORT).show());
+    }
+
+    private void startUserStatusTracking() {
+        if (otherUserId == null) return;
+
+        // Удаляем предыдущий слушатель, если он есть
+        if (userStatusListener != null) {
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(otherUserId)
+                    .removeEventListener(userStatusListener);
+        }
+
+        userStatusListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
+                    Boolean isOnline = snapshot.child("isOnline").getValue(Boolean.class);
+                    Long lastOnline = snapshot.child("lastOnline").getValue(Long.class);
+                    String lastOnlineTime = snapshot.child("lastOnlineTime").getValue(String.class);
+                    String lastOnlineDate = snapshot.child("lastOnlineDate").getValue(String.class);
+
+                    updateUserStatusDisplay(isOnline, lastOnline, lastOnlineTime, lastOnlineDate);
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("ChatActivity", "Failed to load user status", error.toException());
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("Users")
+                .child(otherUserId)
+                .addValueEventListener(userStatusListener);
+
+        // Запускаем периодическое обновление статуса
+        startPeriodicStatusUpdate();
+    }
+
+    private void startPeriodicStatusUpdate() {
+        statusUpdateHandler = new Handler();
+        statusUpdateRunnable = new Runnable() {
+            @Override
+            public void run() {
+                // Принудительно обновляем статус каждую минуту для актуальности
+                if (otherUserId != null) {
+                    FirebaseDatabase.getInstance().getReference("Users")
+                            .child(otherUserId)
+                            .addListenerForSingleValueEvent(new ValueEventListener() {
+                                @Override
+                                public void onDataChange(@NonNull DataSnapshot snapshot) {
+                                    if (snapshot.exists()) {
+                                        Boolean isOnline = snapshot.child("isOnline").getValue(Boolean.class);
+                                        Long lastOnline = snapshot.child("lastOnline").getValue(Long.class);
+                                        String lastOnlineTime = snapshot.child("lastOnlineTime").getValue(String.class);
+                                        String lastOnlineDate = snapshot.child("lastOnlineDate").getValue(String.class);
+
+                                        updateUserStatusDisplay(isOnline, lastOnline, lastOnlineTime, lastOnlineDate);
+                                    }
+                                }
+
+                                @Override
+                                public void onCancelled(@NonNull DatabaseError error) {
+                                    Log.e("ChatActivity", "Failed to update user status", error.toException());
+                                }
+                            });
+                }
+                statusUpdateHandler.postDelayed(this, 60000); // Обновляем каждую минуту
+            }
+        };
+        statusUpdateHandler.post(statusUpdateRunnable);
+    }
+
+    private void updateUserStatusDisplay(Boolean isOnline, Long lastOnline, String lastOnlineTime, String lastOnlineDate) {
+        runOnUiThread(() -> {
+            if (isOnline != null && isOnline) {
+                binding.userStatus.setText("online");
+                binding.userStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+            } else {
+                if (lastOnline != null) {
+                    String statusText = formatLastSeen(lastOnline, lastOnlineTime, lastOnlineDate);
+                    binding.userStatus.setText(statusText);
+                } else {
+                    binding.userStatus.setText("offline");
+                }
+                binding.userStatus.setTextColor(getResources().getColor(android.R.color.darker_gray));
+            }
+        });
+    }
+
+    private String formatLastSeen(long lastOnlineTimestamp, String lastOnlineTime, String lastOnlineDate) {
+        long currentTime = System.currentTimeMillis();
+        long diff = currentTime - lastOnlineTimestamp;
+        long minutes = diff / (60 * 1000);
+        long hours = diff / (60 * 60 * 1000);
+
+        // Получаем текущую дату и дату последней активности
+        java.util.Calendar currentCal = java.util.Calendar.getInstance();
+        java.util.Calendar lastOnlineCal = java.util.Calendar.getInstance();
+        lastOnlineCal.setTimeInMillis(lastOnlineTimestamp);
+
+        int currentDay = currentCal.get(java.util.Calendar.DAY_OF_YEAR);
+        int currentYear = currentCal.get(java.util.Calendar.YEAR);
+        int lastOnlineDay = lastOnlineCal.get(java.util.Calendar.DAY_OF_YEAR);
+        int lastOnlineYear = lastOnlineCal.get(java.util.Calendar.YEAR);
+
+        // Проверяем, был ли пользователь онлайн вчера
+        boolean isYesterday = (currentDay - lastOnlineDay == 1 && currentYear == lastOnlineYear) ||
+                (currentDay == 1 && lastOnlineDay >= 365 && currentYear - lastOnlineYear == 1);
+
+        // Проверяем, был ли пользователь онлайн позавчера или раньше
+        boolean isMoreThanTwoDays = (currentDay - lastOnlineDay > 1 && currentYear == lastOnlineYear) ||
+                (currentYear - lastOnlineYear > 0);
+
+        if (minutes < 1) {
+            return "was online just now";
+        } else if (minutes < 60) {
+            return "was online " + minutes + " minute" + (minutes > 1 ? "s" : "") + " ago";
+        } else if (hours < 24) {
+            return "was online " + hours + " hour" + (hours > 1 ? "s" : "") + " ago";
+        } else if (isYesterday) {
+            return "was online yesterday at " + (lastOnlineTime != null ? lastOnlineTime : "unknown time");
+        } else if (isMoreThanTwoDays) {
+            // Для активности старше 2 дней показываем полную дату и время
+            SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy 'at' HH:mm", Locale.getDefault());
+            return "was online " + dateFormat.format(new Date(lastOnlineTimestamp));
+        } else {
+            return "was online " + (lastOnlineTime != null ? lastOnlineTime : "unknown time") + " " + (lastOnlineDate != null ? lastOnlineDate : "");
+        }
     }
 
     private void markAllMessagesAsRead() {
@@ -207,10 +344,10 @@ public class ChatActivity extends AppCompatActivity {
 
         HashMap<String, Object> messageInfo = new HashMap<>();
         messageInfo.put("text", messageText);
-        messageInfo.put("ownerId", currentUserId); // Важно: ownerId текущего пользователя
+        messageInfo.put("ownerId", currentUserId);
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
-        messageInfo.put("isRead", true); // Свои сообщения сразу прочитаны
+        messageInfo.put("isRead", true);
 
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
@@ -220,7 +357,6 @@ public class ChatActivity extends AppCompatActivity {
                 .setValue(messageInfo)
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
-                        // ОБНОВЛЯЕМ ПОСЛЕДНЕЕ СООБЩЕНИЕ В ЧАТЕ
                         updateLastMessageInChat(messageText, System.currentTimeMillis());
                     } else {
                         Toast.makeText(ChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
@@ -279,6 +415,14 @@ public class ChatActivity extends AppCompatActivity {
                                         .error(R.drawable.artem)
                                         .into(binding.chatUserAvatar);
                             }
+
+                            // Загружаем начальный статус
+                            Boolean isOnline = snapshot.child("isOnline").getValue(Boolean.class);
+                            Long lastOnline = snapshot.child("lastOnline").getValue(Long.class);
+                            String lastOnlineTime = snapshot.child("lastOnlineTime").getValue(String.class);
+                            String lastOnlineDate = snapshot.child("lastOnlineDate").getValue(String.class);
+
+                            updateUserStatusDisplay(isOnline, lastOnline, lastOnlineTime, lastOnlineDate);
                         }
                     }
 
@@ -309,6 +453,7 @@ public class ChatActivity extends AppCompatActivity {
                                 loadMessages();
                                 setupKeyboardBehavior();
                                 markAllMessagesAsRead();
+                                startUserStatusTracking();
                             }
                         }
                     }
@@ -422,12 +567,25 @@ public class ChatActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        // Очищаем слушатели
         if (messagesListener != null && chatId != null) {
             FirebaseDatabase.getInstance()
                     .getReference("Chats")
                     .child(chatId)
                     .child("messages")
                     .removeEventListener(messagesListener);
+        }
+
+        if (userStatusListener != null && otherUserId != null) {
+            FirebaseDatabase.getInstance()
+                    .getReference("Users")
+                    .child(otherUserId)
+                    .removeEventListener(userStatusListener);
+        }
+
+        if (statusUpdateHandler != null && statusUpdateRunnable != null) {
+            statusUpdateHandler.removeCallbacks(statusUpdateRunnable);
         }
     }
 }

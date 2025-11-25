@@ -49,10 +49,11 @@
                 android:textColor="@android:color/white"
                 android:background="@drawable/rounded_create_button"
                 android:visibility="gone"
-                android:layout_centerVertical="true"
                 android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp" />
+
 
         </RelativeLayout>
 
