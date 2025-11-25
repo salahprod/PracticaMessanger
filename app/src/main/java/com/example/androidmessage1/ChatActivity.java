@@ -207,10 +207,10 @@ public class ChatActivity extends AppCompatActivity {
 
         HashMap<String, Object> messageInfo = new HashMap<>();
         messageInfo.put("text", messageText);
-        messageInfo.put("ownerId", currentUserId);
+        messageInfo.put("ownerId", currentUserId); // Важно: ownerId текущего пользователя
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
-        messageInfo.put("isRead", false); // Сообщения от других пользователей будут false
+        messageInfo.put("isRead", true); // Свои сообщения сразу прочитаны
 
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
@@ -222,23 +222,10 @@ public class ChatActivity extends AppCompatActivity {
                     if (task.isSuccessful()) {
                         // ОБНОВЛЯЕМ ПОСЛЕДНЕЕ СООБЩЕНИЕ В ЧАТЕ
                         updateLastMessageInChat(messageText, System.currentTimeMillis());
-                        // Свои сообщения сразу помечаем как прочитанные
-                        markOwnMessageAsRead(messageKey);
                     } else {
                         Toast.makeText(ChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
                     }
                 });
-    }
-
-    private void markOwnMessageAsRead(String messageKey) {
-        final String currentChatId = this.chatId;
-
-        FirebaseDatabase.getInstance().getReference("Chats")
-                .child(currentChatId)
-                .child("messages")
-                .child(messageKey)
-                .child("isRead")
-                .setValue(true);
     }
 
     private void updateLastMessageInChat(String lastMessage, long timestamp) {

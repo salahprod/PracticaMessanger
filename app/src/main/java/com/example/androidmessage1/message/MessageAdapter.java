@@ -34,14 +34,14 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         holder.messageTv.setText(message.getText());
         holder.dateTv.setText(message.getDate());
 
-        // ✅ ГРУППИРОВКА СООБЩЕНИЙ - УБИРАЕМ ЛИШНИЕ ОТСТУПЫ
+        // ГРУППИРОВКА СООБЩЕНИЙ - УБИРАЕМ ЛИШНИЕ ОТСТУПЫ
         if (position > 0) {
             Message previousMessage = messages.get(position - 1);
             String currentUserId = FirebaseAuth.getInstance().getCurrentUser() != null
                     ? FirebaseAuth.getInstance().getCurrentUser().getUid()
                     : "";
 
-            // Если предыдущее сообщение от того же пользователя и разница во времени небольшая
+            // Если предыдущее сообщение от того же пользователя
             if (previousMessage.getOwnerId().equals(message.getOwnerId())) {
                 // Убираем отступы между сообщениями от одного пользователя
                 ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) holder.itemView.getLayoutParams();
@@ -53,7 +53,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                 // Сообщения от разных пользователей - обычный отступ
                 ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) holder.itemView.getLayoutParams();
                 if (params != null) {
-                    params.topMargin = 5; // Небольшой отступ
+                    params.topMargin = 8; // Отступ между сообщениями разных пользователей
                     holder.itemView.setLayoutParams(params);
                 }
             }
@@ -61,7 +61,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             // Первое сообщение - обычный отступ
             ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) holder.itemView.getLayoutParams();
             if (params != null) {
-                params.topMargin = 5;
+                params.topMargin = 8;
                 holder.itemView.setLayoutParams(params);
             }
         }
@@ -78,10 +78,11 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                 ? FirebaseAuth.getInstance().getCurrentUser().getUid()
                 : "";
 
+        // Ваши сообщения будут использовать message_from_curr_user_rv_item.xml (справа)
         if(messages.get(position).getOwnerId().equals(currentUserId))
             return R.layout.message_from_curr_user_rv_item;
         else
-            return R.layout.message_rv_item;
+            return R.layout.message_rv_item; // Сообщения других пользователей (слева)
     }
 
     static class MessageViewHolder extends RecyclerView.ViewHolder{

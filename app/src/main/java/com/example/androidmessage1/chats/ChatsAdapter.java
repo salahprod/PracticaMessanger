@@ -1,7 +1,6 @@
 package com.example.androidmessage1.chats;
 
 import android.content.Intent;
-import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -12,6 +11,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.Glide;
 import com.example.androidmessage1.ChatActivity;
 import com.example.androidmessage1.R;
+import com.example.androidmessage1.groups.GroupChatActivity;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
@@ -24,7 +24,19 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
 
     private ArrayList<Chat> chats;
     private String currentUserId;
+    private OnChatClickListener listener;
 
+    public interface OnChatClickListener {
+        void onChatClick(int position);
+    }
+
+    public ChatsAdapter(ArrayList<Chat> chats, OnChatClickListener listener){
+        this.chats = chats;
+        this.currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        this.listener = listener;
+    }
+
+    // Старый конструктор для обратной совместимости
     public ChatsAdapter(ArrayList<Chat> chats){
         this.chats = chats;
         this.currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
@@ -41,7 +53,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     public void onBindViewHolder(@NonNull ChatViewHolder holder, int position) {
         Chat chat = chats.get(position);
 
-        // Устанавливаем имя чата
+        // Устанавливаем имя чата/группы
         holder.username_tv.setText(chat.getChat_name());
 
         // Устанавливаем последнее сообщение
@@ -77,19 +89,43 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         // Сбрасываем аватарку перед загрузкой
         holder.profile_iv.setImageResource(R.drawable.artem);
 
-        // Правильно определяем ID пользователя для загрузки аватарки
-        String userIdForAvatar = chat.getOther_user_id();
+        if (chat.isGroup()) {
+            // Для групп загружаем аватарку группы
+            loadGroupAvatar(holder, chat.getChat_id(), position);
+        } else {
+            // Для обычных чатов загружаем аватарку пользователя
+            loadUserAvatar(holder, chat.getOther_user_id(), position);
+        }
 
+        holder.itemView.setOnClickListener(v -> {
+            if (listener != null) {
+                listener.onChatClick(position);
+            } else {
+                // Старая логика для обратной совместимости
+                if (chat.isGroup()) {
+                    Intent intent = new Intent(holder.itemView.getContext(), GroupChatActivity.class);
+                    intent.putExtra("groupId", chat.getChat_id());
+                    intent.putExtra("groupName", chat.getChat_name());
+                    holder.itemView.getContext().startActivity(intent);
+                } else {
+                    Intent intent = new Intent(holder.itemView.getContext(), ChatActivity.class);
+                    intent.putExtra("chatId", chat.getChat_id());
+                    intent.putExtra("otherUserId", chat.getOther_user_id());
+                    holder.itemView.getContext().startActivity(intent);
+                }
+            }
+        });
+    }
+
+    private void loadUserAvatar(ChatViewHolder holder, String userId, int position) {
         final int currentPosition = position;
 
-        // Загрузка аватарки
-        FirebaseDatabase.getInstance().getReference().child("Users").child(userIdForAvatar)
+        FirebaseDatabase.getInstance().getReference().child("Users").child(userId)
                 .child("profileImage").get()
                 .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
                     @Override
                     public void onComplete(@NonNull Task<DataSnapshot> task) {
                         try {
-                            // Проверяем, что позиция не изменилась
                             if (holder.getAdapterPosition() != currentPosition) {
                                 return;
                             }
@@ -114,17 +150,41 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                         }
                     }
                 });
+    }
 
-        holder.itemView.setOnClickListener(v -> {
-            Intent intent = new Intent(holder.itemView.getContext(), ChatActivity.class);
-            intent.putExtra("chatId", chat.getChat_id());
-            intent.putExtra("otherUserId", chat.getOther_user_id());
-            holder.itemView.getContext().startActivity(intent);
-        });
-        if (chat.isGroup()) {
-            // Отображаем иконку группы или другую визуальную подсказку
-            holder.itemView.setBackgroundColor(Color.LTGRAY); // например
-        }
+    private void loadGroupAvatar(ChatViewHolder holder, String groupId, int position) {
+        final int currentPosition = position;
+
+        FirebaseDatabase.getInstance().getReference().child("Groups").child(groupId)
+                .child("groupImage").get()
+                .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
+                    @Override
+                    public void onComplete(@NonNull Task<DataSnapshot> task) {
+                        try {
+                            if (holder.getAdapterPosition() != currentPosition) {
+                                return;
+                            }
+
+                            if (task.isSuccessful() && task.getResult() != null && task.getResult().getValue() != null) {
+                                String groupImageUrl = task.getResult().getValue().toString();
+
+                                if (groupImageUrl != null && !groupImageUrl.isEmpty()) {
+                                    Glide.with(holder.itemView.getContext())
+                                            .load(groupImageUrl)
+                                            .placeholder(R.drawable.artem)
+                                            .error(R.drawable.artem)
+                                            .into(holder.profile_iv);
+                                } else {
+                                    holder.profile_iv.setImageResource(R.drawable.artem);
+                                }
+                            } else {
+                                holder.profile_iv.setImageResource(R.drawable.artem);
+                            }
+                        } catch (Exception e) {
+                            holder.profile_iv.setImageResource(R.drawable.artem);
+                        }
+                    }
+                });
     }
 
     @Override

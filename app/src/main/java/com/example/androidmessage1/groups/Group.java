@@ -1,6 +1,7 @@
 package com.example.androidmessage1.groups;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 public class Group {
@@ -11,12 +12,14 @@ public class Group {
     private long createdAt;
     private List<String> members;
     private String lastMessage;
+    private String lastMessageSender;
     private long lastMessageTime;
     private int unreadCount;
+    private HashMap<String, String> memberNames;
 
     public Group() {
-        // Конструктор по умолчанию для Firebase
         this.members = new ArrayList<>();
+        this.memberNames = new HashMap<>();
     }
 
     public Group(String groupId, String groupName, String groupImage, String createdBy) {
@@ -26,7 +29,9 @@ public class Group {
         this.createdBy = createdBy;
         this.createdAt = System.currentTimeMillis();
         this.members = new ArrayList<>();
+        this.memberNames = new HashMap<>();
         this.lastMessage = "Group created";
+        this.lastMessageSender = "system";
         this.lastMessageTime = System.currentTimeMillis();
         this.unreadCount = 0;
     }
@@ -48,18 +53,12 @@ public class Group {
     public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }
 
     public List<String> getMembers() {
-        if (members == null) {
-            members = new ArrayList<>();
-        }
+        if (members == null) members = new ArrayList<>();
         return members;
     }
 
     public void setMembers(List<String> members) {
-        if (members == null) {
-            this.members = new ArrayList<>();
-        } else {
-            this.members = members;
-        }
+        this.members = members != null ? members : new ArrayList<>();
     }
 
     public String getLastMessage() {
@@ -68,28 +67,44 @@ public class Group {
 
     public void setLastMessage(String lastMessage) { this.lastMessage = lastMessage; }
 
+    public String getLastMessageSender() {
+        return lastMessageSender != null ? lastMessageSender : "system";
+    }
+
+    public void setLastMessageSender(String lastMessageSender) {
+        this.lastMessageSender = lastMessageSender;
+    }
+
     public long getLastMessageTime() { return lastMessageTime; }
     public void setLastMessageTime(long lastMessageTime) { this.lastMessageTime = lastMessageTime; }
 
     public int getUnreadCount() { return unreadCount; }
     public void setUnreadCount(int unreadCount) { this.unreadCount = unreadCount; }
 
-    public void addMember(String userId) {
-        if (members == null) {
-            members = new ArrayList<>();
-        }
+    public HashMap<String, String> getMemberNames() {
+        if (memberNames == null) memberNames = new HashMap<>();
+        return memberNames;
+    }
+
+    public void setMemberNames(HashMap<String, String> memberNames) {
+        this.memberNames = memberNames != null ? memberNames : new HashMap<>();
+    }
+
+    public void addMember(String userId, String userName) {
         if (!members.contains(userId)) {
             members.add(userId);
+        }
+        if (userName != null) {
+            memberNames.put(userId, userName);
         }
     }
 
     public void removeMember(String userId) {
-        if (members != null) {
-            members.remove(userId);
-        }
+        members.remove(userId);
+        memberNames.remove(userId);
     }
 
     public boolean isMember(String userId) {
-        return members != null && members.contains(userId);
+        return members.contains(userId);
     }
 }

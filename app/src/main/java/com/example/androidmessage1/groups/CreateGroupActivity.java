@@ -352,21 +352,32 @@ public class CreateGroupActivity extends AppCompatActivity {
     }
 
     private void createGroupInDatabase(String groupName, String imageUrl, ArrayList<String> allMembers) {
-        Log.d(TAG, "createGroupInDatabase: Starting database operations");
         String groupId = FirebaseDatabase.getInstance()
                 .getReference("Groups")
                 .push()
                 .getKey();
 
-        Log.d(TAG, "createGroupInDatabase: Generated group ID: " + groupId);
-
         if (groupId == null) {
-            Log.e(TAG, "createGroupInDatabase: Failed to generate group ID");
             Toast.makeText(this, "Error creating group: null group ID", Toast.LENGTH_SHORT).show();
             binding.createGroupBtn.setEnabled(true);
             binding.progressBar.setVisibility(View.GONE);
             return;
         }
+
+        // Создаем группу
+        Group group = new Group(groupId, groupName, imageUrl, currentUserId);
+        group.setMembers(allMembers);
+
+        // Создаем приветственное сообщение как системное уведомление
+        HashMap<String, Object> welcomeMessage = new HashMap<>();
+        //welcomeMessage.put("text", "Group '" + groupName + "' was created by " + getCurrentUserName());
+        welcomeMessage.put("ownerId", "system");
+        welcomeMessage.put("senderName", "System");
+        welcomeMessage.put("senderAvatar", "");
+        welcomeMessage.put("date", getCurrentTime());
+        welcomeMessage.put("timestamp", System.currentTimeMillis());
+        welcomeMessage.put("isRead", true);
+        welcomeMessage.put("isSystemMessage", true);
 
         // Подготавливаем данные для записи
         HashMap<String, Object> groupData = new HashMap<>();
@@ -378,6 +389,7 @@ public class CreateGroupActivity extends AppCompatActivity {
         groupData.put("Groups/" + groupId + "/createdBy", currentUserId);
         groupData.put("Groups/" + groupId + "/createdAt", System.currentTimeMillis());
         groupData.put("Groups/" + groupId + "/lastMessage", "Group created");
+        groupData.put("Groups/" + groupId + "/lastMessageSender", "System");
         groupData.put("Groups/" + groupId + "/lastMessageTime", System.currentTimeMillis());
 
         // Участники группы
@@ -386,12 +398,6 @@ public class CreateGroupActivity extends AppCompatActivity {
         }
 
         // Приветственное сообщение
-        HashMap<String, Object> welcomeMessage = new HashMap<>();
-        welcomeMessage.put("text", "Group '" + groupName + "' was created");
-        welcomeMessage.put("ownerId", "system");
-        welcomeMessage.put("timestamp", System.currentTimeMillis());
-        welcomeMessage.put("isRead", true);
-
         groupData.put("Groups/" + groupId + "/messages/message_welcome", welcomeMessage);
 
         // Добавляем группу в список групп каждого участника
@@ -412,11 +418,10 @@ public class CreateGroupActivity extends AppCompatActivity {
                         Log.d(TAG, "createGroupInDatabase: Group created successfully");
                         Toast.makeText(this, "Group created successfully!", Toast.LENGTH_SHORT).show();
 
-                        // Открываем активность группового чата
+                        // Сразу открываем групповой чат
                         Intent intent = new Intent(this, GroupChatActivity.class);
                         intent.putExtra("groupId", groupId);
                         intent.putExtra("groupName", groupName);
-                        Log.d(TAG, "createGroupInDatabase: Starting GroupChatActivity");
                         startActivity(intent);
                         finish();
                     } else {
@@ -429,12 +434,18 @@ public class CreateGroupActivity extends AppCompatActivity {
                         Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show();
                         binding.createGroupBtn.setEnabled(true);
                     }
-                })
-                .addOnFailureListener(e -> {
-                    Log.e(TAG, "createGroupInDatabase: Failed with exception", e);
-                    binding.progressBar.setVisibility(View.GONE);
-                    binding.createGroupBtn.setEnabled(true);
                 });
+    }
+
+    private String getCurrentUserName() {
+        // Здесь можно получить имя текущего пользователя из Firebase
+        // Пока возвращаем "User" как заглушку
+        return "User";
+    }
+
+    private String getCurrentTime() {
+        java.text.SimpleDateFormat dateFormat = new java.text.SimpleDateFormat("dd.MM.yyyy HH:mm");
+        return dateFormat.format(new java.util.Date());
     }
 
     @Override

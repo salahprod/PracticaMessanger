@@ -1,8 +1,6 @@
 package com.example.androidmessage1.chats;
 
 public class Chat {
-
-    private boolean isGroup;
     private String chat_id;
     private String other_user_id;
     private String current_user_id;
@@ -11,6 +9,8 @@ public class Chat {
     private String lastMessageTime;
     private long lastMessageTimestamp;
     private int unreadCount;
+    private boolean isGroup;
+    private int membersCount;
 
     public Chat() {
         // Default constructor required for Firebase
@@ -25,6 +25,8 @@ public class Chat {
         this.lastMessageTime = "";
         this.lastMessageTimestamp = 0L;
         this.unreadCount = 0;
+        this.isGroup = false;
+        this.membersCount = 0;
     }
 
     // Getters and Setters
@@ -43,22 +45,18 @@ public class Chat {
     public String getLastMessage() { return lastMessage; }
     public void setLastMessage(String lastMessage) { this.lastMessage = lastMessage; }
 
-    public boolean isGroup() {
-        return isGroup;
-    }
     public String getLastMessageTime() { return lastMessageTime; }
     public void setLastMessageTime(String lastMessageTime) { this.lastMessageTime = lastMessageTime; }
 
     public long getLastMessageTimestamp() { return lastMessageTimestamp; }
     public void setLastMessageTimestamp(long lastMessageTimestamp) { this.lastMessageTimestamp = lastMessageTimestamp; }
 
-    public void setGroup(boolean group) {
-        isGroup = group;
-    }
     public int getUnreadCount() { return unreadCount; }
     public void setUnreadCount(int unreadCount) { this.unreadCount = unreadCount; }
 
-    // Методы для совместимости
-    public String getUserId1() { return current_user_id; }
-    public String getUserId2() { return other_user_id; }
+    public boolean isGroup() { return isGroup; }
+    public void setGroup(boolean group) { isGroup = group; }
+
+    public int getMembersCount() { return membersCount; }
+    public void setMembersCount(int membersCount) { this.membersCount = membersCount; }
 }

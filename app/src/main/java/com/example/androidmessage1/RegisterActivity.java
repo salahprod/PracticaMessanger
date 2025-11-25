@@ -16,6 +16,7 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.FirebaseDatabase;
 
 import java.util.HashMap;
+import java.util.Map;
 
 public class RegisterActivity extends AppCompatActivity {
 
@@ -71,11 +72,12 @@ public class RegisterActivity extends AppCompatActivity {
                                 // Регистрация успешна - получаем UID созданного пользователя
                                 String userId = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
-                                // Создаем данные пользователя для базы
-                                HashMap<String, String> userInfo = new HashMap<>();
+                                // Создаем данные пользователя для базы с онлайн статусом
+                                Map<String, Object> userInfo = new HashMap<>();
                                 userInfo.put("login", login);
                                 userInfo.put("email", email);
                                 userInfo.put("profileImage", "");
+                                userInfo.put("isOnline", true);
 
                                 // Записываем в базу данных
                                 FirebaseDatabase.getInstance()
@@ -85,6 +87,13 @@ public class RegisterActivity extends AppCompatActivity {
                                         .setValue(userInfo)
                                         .addOnCompleteListener(dbTask -> {
                                             if (dbTask.isSuccessful()) {
+                                                // Устанавливаем onDisconnect для автоматического offline
+                                                FirebaseDatabase.getInstance().getReference("Users")
+                                                        .child(userId)
+                                                        .child("isOnline")
+                                                        .onDisconnect()
+                                                        .setValue(false);
+
                                                 Toast.makeText(RegisterActivity.this, "Registration successful!", Toast.LENGTH_SHORT).show();
                                                 startActivity(new Intent(RegisterActivity.this, MainActivity.class));
                                                 finish();
@@ -113,5 +122,11 @@ public class RegisterActivity extends AppCompatActivity {
             Intent intent = new Intent(RegisterActivity.this, PoliticalActivity.class);
             startActivity(intent);
         });
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        binding = null;
     }
 }

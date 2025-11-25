@@ -14,8 +14,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import com.bumptech.glide.Glide;
 import com.example.androidmessage1.R;
 import com.example.androidmessage1.databinding.ActivityGroupChatBinding;
-import com.example.androidmessage1.message.Message;
-import com.example.androidmessage1.message.MessageAdapter;
+import com.example.androidmessage1.groups.messages.GroupMessage;
+import com.example.androidmessage1.groups.messages.GroupMessageAdapter;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
@@ -26,19 +26,23 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class GroupChatActivity extends AppCompatActivity {
 
     private ActivityGroupChatBinding binding;
     private String groupId;
     private String groupName;
-    private MessageAdapter messageAdapter;
-    private List<Message> messages = new ArrayList<>();
+    private GroupMessageAdapter messageAdapter;
+    private List<GroupMessage> messages = new ArrayList<>();
     private ValueEventListener messagesListener;
     private ValueEventListener groupInfoListener;
+    private ValueEventListener onlineUsersListener;
     private String currentUserId;
     private List<String> groupMembers = new ArrayList<>();
+    private Set<String> onlineUsers = new HashSet<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,17 +60,22 @@ public class GroupChatActivity extends AppCompatActivity {
             return;
         }
 
+        Log.d("GroupChatActivity", "Opening group: " + groupId + ", name: " + groupName);
+
         initializeViews();
         loadGroupInfo();
         loadMessages();
-        loadOnlineMembers();
+        setupOnlineStatus();
+
+        binding.sendMessageBtn.setOnClickListener(v -> sendMessage());
+        binding.exitBtn.setOnClickListener(v -> finish());
     }
 
     private void initializeViews() {
         binding.groupName.setText(groupName != null ? groupName : "Group");
 
         binding.messagesRv.setLayoutManager(new LinearLayoutManager(this));
-        messageAdapter = new MessageAdapter(messages);
+        messageAdapter = new GroupMessageAdapter(messages);
         binding.messagesRv.setAdapter(messageAdapter);
 
         messageAdapter.registerAdapterDataObserver(new androidx.recyclerview.widget.RecyclerView.AdapterDataObserver() {
@@ -75,9 +84,6 @@ public class GroupChatActivity extends AppCompatActivity {
                 scrollToBottom();
             }
         });
-
-        binding.sendMessageBtn.setOnClickListener(v -> sendMessage());
-        binding.exitBtn.setOnClickListener(v -> finish());
     }
 
     private void loadGroupInfo() {
@@ -85,7 +91,6 @@ public class GroupChatActivity extends AppCompatActivity {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (snapshot.exists()) {
-                    // Load group basic info
                     String name = snapshot.child("groupName").getValue(String.class);
                     String image = snapshot.child("groupImage").getValue(String.class);
 
@@ -102,20 +107,19 @@ public class GroupChatActivity extends AppCompatActivity {
                                 .into(binding.groupImage);
                     }
 
-                    // Load members and update count
+                    // Загружаем список участников группы
                     groupMembers.clear();
                     DataSnapshot membersSnapshot = snapshot.child("members");
                     if (membersSnapshot.exists()) {
                         for (DataSnapshot memberSnapshot : membersSnapshot.getChildren()) {
                             String memberId = memberSnapshot.getValue(String.class);
-                            if (memberId != null) {
+                            if (memberId != null && !groupMembers.contains(memberId)) {
                                 groupMembers.add(memberId);
                             }
                         }
+                        updateMembersCount();
+                        loadOnlineMembers();
                     }
-
-                    // Update members count
-                    updateMembersCount();
                 }
             }
 
@@ -130,47 +134,77 @@ public class GroupChatActivity extends AppCompatActivity {
                 .addValueEventListener(groupInfoListener);
     }
 
+    private void setupOnlineStatus() {
+        // Устанавливаем текущего пользователя онлайн
+        if (currentUserId != null) {
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("isOnline")
+                    .setValue(true);
+
+            // Устанавливаем слушатель для удаления онлайн статуса при выходе
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("isOnline")
+                    .onDisconnect()
+                    .setValue(false);
+        }
+    }
+
+    private void loadOnlineMembers() {
+        // Очищаем предыдущий слушатель
+        if (onlineUsersListener != null) {
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .removeEventListener(onlineUsersListener);
+        }
+
+        onlineUsersListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                onlineUsers.clear();
+                int onlineCount = 0;
+
+                for (String memberId : groupMembers) {
+                    DataSnapshot userSnapshot = snapshot.child(memberId);
+                    if (userSnapshot.exists()) {
+                        Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
+                        if (isOnline != null && isOnline) {
+                            onlineUsers.add(memberId);
+                            onlineCount++;
+                        }
+                    }
+                }
+
+                updateOnlineCount(onlineCount);
+                Log.d("GroupChatActivity", "Online users: " + onlineCount + " out of " + groupMembers.size());
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("GroupChatActivity", "Failed to load online users", error.toException());
+                binding.onlineCount.setText("offline");
+                binding.onlineCount.setTextColor(getResources().getColor(android.R.color.darker_gray));
+            }
+        };
+
+        // Слушаем изменения статуса всех пользователей
+        FirebaseDatabase.getInstance().getReference("Users")
+                .addValueEventListener(onlineUsersListener);
+    }
+
     private void updateMembersCount() {
         int totalMembers = groupMembers.size();
         binding.membersCount.setText(totalMembers + " member" + (totalMembers > 1 ? "s" : ""));
     }
 
-    private void loadOnlineMembers() {
-        // This is a simplified version - you'll need to implement online status tracking
-        // For now, we'll just show the total members count
-        FirebaseDatabase.getInstance().getReference("Users")
-                .addListenerForSingleValueEvent(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        int onlineCount = 0;
-
-                        // Count members who have online status (you need to implement this)
-                        for (String memberId : groupMembers) {
-                            DataSnapshot userSnapshot = snapshot.child(memberId);
-                            if (userSnapshot.exists()) {
-                                // Check if user is online (you need to implement online status tracking)
-                                Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
-                                if (isOnline != null && isOnline) {
-                                    onlineCount++;
-                                }
-                            }
-                        }
-
-                        if (onlineCount > 0) {
-                            binding.onlineCount.setText(onlineCount + " online");
-                            binding.onlineCount.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
-                        } else {
-                            binding.onlineCount.setText("offline");
-                            binding.onlineCount.setTextColor(getResources().getColor(android.R.color.darker_gray));
-                        }
-                    }
-
-                    @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        binding.onlineCount.setText("offline");
-                        binding.onlineCount.setTextColor(getResources().getColor(android.R.color.darker_gray));
-                    }
-                });
+    private void updateOnlineCount(int onlineCount) {
+        if (onlineCount > 0) {
+            binding.onlineCount.setText(onlineCount + " online");
+            binding.onlineCount.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+        } else {
+            binding.onlineCount.setText("offline");
+            binding.onlineCount.setTextColor(getResources().getColor(android.R.color.darker_gray));
+        }
     }
 
     private void loadMessages() {
@@ -193,20 +227,20 @@ public class GroupChatActivity extends AppCompatActivity {
                         String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
                         String text = messageSnapshot.child("text").getValue(String.class);
                         String date = messageSnapshot.child("date").getValue(String.class);
+                        String senderName = messageSnapshot.child("senderName").getValue(String.class);
+                        String senderAvatar = messageSnapshot.child("senderAvatar").getValue(String.class);
 
                         if (messageId != null && ownerId != null && text != null) {
-                            if (date == null) {
-                                // If date is null, create one from timestamp
-                                Long timestamp = messageSnapshot.child("timestamp").getValue(Long.class);
-                                if (timestamp != null) {
-                                    SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm");
-                                    date = dateFormat.format(new Date(timestamp));
-                                } else {
-                                    date = "Unknown time";
-                                }
+                            GroupMessage message = new GroupMessage(messageId, ownerId, text, date);
+
+                            if (senderName != null && !senderName.isEmpty()) {
+                                message.setSenderName(senderName);
                             }
 
-                            Message message = new Message(messageId, ownerId, text, date);
+                            if (senderAvatar != null && !senderAvatar.isEmpty()) {
+                                message.setSenderAvatar(senderAvatar);
+                            }
+
                             messages.add(message);
                         }
                     }
@@ -214,10 +248,13 @@ public class GroupChatActivity extends AppCompatActivity {
 
                 messageAdapter.notifyDataSetChanged();
                 scrollToBottom();
+
+                Log.d("GroupChatActivity", "Loaded " + messages.size() + " messages");
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("GroupChatActivity", "Failed to load messages", error.toException());
                 Toast.makeText(GroupChatActivity.this, "Failed to load messages", Toast.LENGTH_SHORT).show();
             }
         };
@@ -253,9 +290,70 @@ public class GroupChatActivity extends AppCompatActivity {
             return;
         }
 
+        // Получаем информацию о текущем пользователе
+        FirebaseDatabase.getInstance().getReference("Users")
+                .child(currentUserId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        String currentUserName = "User";
+                        String currentUserAvatar = "";
+
+                        if (snapshot.exists()) {
+                            String login = snapshot.child("login").getValue(String.class);
+                            if (login != null && !login.isEmpty()) {
+                                currentUserName = login;
+                            } else {
+                                String email = snapshot.child("email").getValue(String.class);
+                                if (email != null && email.contains("@")) {
+                                    currentUserName = email.substring(0, email.indexOf("@"));
+                                }
+                            }
+
+                            String avatar = snapshot.child("profileImage").getValue(String.class);
+                            if (avatar != null && !avatar.isEmpty()) {
+                                currentUserAvatar = avatar;
+                            }
+                        }
+
+                        HashMap<String, Object> messageInfo = new HashMap<>();
+                        messageInfo.put("text", messageText);
+                        messageInfo.put("ownerId", currentUserId); // Важно: ownerId текущего пользователя
+                        messageInfo.put("senderName", currentUserName);
+                        messageInfo.put("senderAvatar", currentUserAvatar);
+                        messageInfo.put("date", date);
+                        messageInfo.put("timestamp", System.currentTimeMillis());
+                        messageInfo.put("isRead", false);
+
+                        HashMap<String, Object> updates = new HashMap<>();
+                        updates.put("Groups/" + groupId + "/messages/" + messageKey, messageInfo);
+                        updates.put("Groups/" + groupId + "/lastMessage", messageText);
+                        updates.put("Groups/" + groupId + "/lastMessageSender", currentUserName);
+                        updates.put("Groups/" + groupId + "/lastMessageTime", System.currentTimeMillis());
+
+                        FirebaseDatabase.getInstance().getReference()
+                                .updateChildren(updates)
+                                .addOnCompleteListener(task -> {
+                                    if (!task.isSuccessful()) {
+                                        Log.e("GroupChatActivity", "Send error: " + task.getException());
+                                        Toast.makeText(GroupChatActivity.this, "Send error", Toast.LENGTH_SHORT).show();
+                                    }
+                                });
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Log.e("GroupChatActivity", "Failed to load user info", error.toException());
+                        sendBasicMessage(messageText, date, messageKey);
+                    }
+                });
+    }
+
+    private void sendBasicMessage(String messageText, String date, String messageKey) {
         HashMap<String, Object> messageInfo = new HashMap<>();
         messageInfo.put("text", messageText);
-        messageInfo.put("ownerId", currentUserId);
+        messageInfo.put("ownerId", currentUserId); // Важно: ownerId текущего пользователя
+        messageInfo.put("senderName", "User");
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
         messageInfo.put("isRead", false);
@@ -263,15 +361,11 @@ public class GroupChatActivity extends AppCompatActivity {
         HashMap<String, Object> updates = new HashMap<>();
         updates.put("Groups/" + groupId + "/messages/" + messageKey, messageInfo);
         updates.put("Groups/" + groupId + "/lastMessage", messageText);
+        updates.put("Groups/" + groupId + "/lastMessageSender", "User");
         updates.put("Groups/" + groupId + "/lastMessageTime", System.currentTimeMillis());
 
         FirebaseDatabase.getInstance().getReference()
-                .updateChildren(updates)
-                .addOnCompleteListener(task -> {
-                    if (!task.isSuccessful()) {
-                        Toast.makeText(GroupChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
-                    }
-                });
+                .updateChildren(updates);
     }
 
     private void scrollToBottom() {
@@ -281,8 +375,28 @@ public class GroupChatActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        // Обновляем статус онлайн при возвращении в приложение
+        if (currentUserId != null) {
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("isOnline")
+                    .setValue(true);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Не устанавливаем offline здесь, так как onDisconnect позаботится об этом
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        // Удаляем все слушатели
         if (messagesListener != null && groupId != null) {
             FirebaseDatabase.getInstance()
                     .getReference("Groups")
@@ -295,6 +409,20 @@ public class GroupChatActivity extends AppCompatActivity {
                     .getReference("Groups")
                     .child(groupId)
                     .removeEventListener(groupInfoListener);
+        }
+        if (onlineUsersListener != null) {
+            FirebaseDatabase.getInstance()
+                    .getReference("Users")
+                    .removeEventListener(onlineUsersListener);
+        }
+
+        // Убираем onDisconnect при выходе из активности
+        if (currentUserId != null) {
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("isOnline")
+                    .onDisconnect()
+                    .cancel();
         }
     }
 }
