@@ -22,6 +22,7 @@ import androidx.fragment.app.Fragment;
 
 import com.bumptech.glide.Glide;
 import com.example.androidmessage1.LoginActivity;
+import com.example.androidmessage1.MainActivity;
 import com.example.androidmessage1.databinding.FragmentProfileBinding;
 import com.google.android.gms.tasks.Continuation;
 import com.google.android.gms.tasks.OnCompleteListener;
@@ -38,6 +39,10 @@ import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
 
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Locale;
 
 public class ProfileFragment extends Fragment {
 
@@ -100,9 +105,7 @@ public class ProfileFragment extends Fragment {
         binding.logoutBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                FirebaseAuth.getInstance().signOut();
-                startActivity(new Intent(getContext(), LoginActivity.class));
-                requireActivity().finish();
+                logoutUser();
             }
         });
 
@@ -122,16 +125,35 @@ public class ProfileFragment extends Fragment {
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         if (!snapshot.exists()) return;
 
-                        if (snapshot.child("username").exists()) {
+                        // Загрузка имени пользователя
+                        if (snapshot.child("login").exists()) {
+                            String username = snapshot.child("login").getValue(String.class);
+                            if (username != null && !username.isEmpty()) {
+                                binding.usernameTv.setText(username);
+                            }
+                        } else if (snapshot.child("username").exists()) {
                             String username = snapshot.child("username").getValue(String.class);
-                            if (username != null) binding.usernameTv.setText(username);
+                            if (username != null && !username.isEmpty()) {
+                                binding.usernameTv.setText(username);
+                            }
+                        } else {
+                            // Если нет имени, используем email
+                            String email = snapshot.child("email").getValue(String.class);
+                            if (email != null && email.contains("@")) {
+                                binding.usernameTv.setText(email.substring(0, email.indexOf("@")));
+                            } else {
+                                binding.usernameTv.setText("User");
+                            }
                         }
 
+                        // Загрузка аватарки
                         if (snapshot.child("profileImage").exists()) {
                             String profileImage = snapshot.child("profileImage").getValue(String.class);
                             if (profileImage != null && !profileImage.isEmpty()) {
                                 Glide.with(requireContext())
                                         .load(profileImage)
+                                        .placeholder(com.example.androidmessage1.R.drawable.artem)
+                                        .error(com.example.androidmessage1.R.drawable.artem)
                                         .into(binding.profileImageView);
                             }
                         }
@@ -142,6 +164,99 @@ public class ProfileFragment extends Fragment {
                         Log.e(TAG, "Database error: " + error.getMessage());
                     }
                 });
+    }
+
+    // ВАЖНО: Исправленный метод выхода
+    private void logoutUser() {
+        String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        if (currentUserId != null) {
+            // Показываем сообщение о выходе
+            Toast.makeText(getContext(), "Logging out...", Toast.LENGTH_SHORT).show();
+
+            // Сначала устанавливаем статус офлайн
+            setUserOffline(currentUserId);
+
+            // Затем выходим из Firebase Auth
+            FirebaseAuth.getInstance().signOut();
+
+            Log.d(TAG, "User logged out successfully: " + currentUserId);
+
+            Toast.makeText(getContext(), "Logged out successfully", Toast.LENGTH_SHORT).show();
+        }
+
+        // Переходим на экран логина
+        navigateToLogin();
+    }
+
+    // ВАЖНО: Метод для установки статуса офлайн
+    private void setUserOffline(String userId) {
+        long currentTime = System.currentTimeMillis();
+
+        SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
+        SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy", Locale.getDefault());
+        String currentTimeString = timeFormat.format(new Date());
+        String currentDateString = dateFormat.format(new Date());
+
+        HashMap<String, Object> updates = new HashMap<>();
+        updates.put("isOnline", false);
+        updates.put("lastOnline", currentTime);
+        updates.put("lastOnlineTime", currentTimeString);
+        updates.put("lastOnlineDate", currentDateString);
+
+        // Отменяем все onDisconnect операции
+        cancelAllOnDisconnect(userId);
+
+        // Устанавливаем офлайн статус
+        FirebaseDatabase.getInstance().getReference("Users")
+                .child(userId)
+                .updateChildren(updates)
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        Log.d(TAG, "User set offline successfully: " + userId);
+                    } else {
+                        Log.e(TAG, "Failed to set user offline", task.getException());
+                    }
+                });
+    }
+
+    // ВАЖНО: Метод для отмены всех onDisconnect операций
+    private void cancelAllOnDisconnect(String userId) {
+        FirebaseDatabase.getInstance().getReference("Users")
+                .child(userId)
+                .child("isOnline")
+                .onDisconnect()
+                .cancel();
+
+        FirebaseDatabase.getInstance().getReference("Users")
+                .child(userId)
+                .child("lastOnline")
+                .onDisconnect()
+                .cancel();
+
+        FirebaseDatabase.getInstance().getReference("Users")
+                .child(userId)
+                .child("lastOnlineTime")
+                .onDisconnect()
+                .cancel();
+
+        FirebaseDatabase.getInstance().getReference("Users")
+                .child(userId)
+                .child("lastOnlineDate")
+                .onDisconnect()
+                .cancel();
+
+        Log.d(TAG, "All onDisconnect operations cancelled for user: " + userId);
+    }
+
+    private void navigateToLogin() {
+        Intent intent = new Intent(getActivity(), LoginActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
+
+        // Завершаем текущую активность
+        if (getActivity() != null) {
+            getActivity().finish();
+        }
     }
 
     private void selectImage() {
@@ -211,31 +326,6 @@ public class ProfileFragment extends Fragment {
                 Toast.makeText(getContext(), "Ошибка загрузки: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
-    }
-    private String getFileExtension(Uri uri) {
-        try {
-            String mimeType = requireContext().getContentResolver().getType(uri);
-            if (mimeType != null) {
-                switch (mimeType) {
-                    case "image/jpeg":
-                    case "image/jpg":
-                        return "jpg";
-                    case "image/png":
-                        return "png";
-                    case "image/webp":
-                        return "webp";
-                    case "image/gif":
-                        return "gif";
-                    case "image/bmp":
-                        return "bmp";
-                    default:
-                        return "jpg"; // по умолчанию
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error getting file extension: " + e.getMessage());
-        }
-        return "jpg"; // расширение по умолчанию
     }
 
     private void saveToDatabaseSimple(String uid, String imageUrl) {

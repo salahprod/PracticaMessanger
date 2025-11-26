@@ -47,6 +47,9 @@ public class LoginActivity extends AppCompatActivity {
             return insets;
         });
 
+        // ВАЖНО: При входе в LoginActivity сбрасываем все onDisconnect операции
+        resetAllOnDisconnect();
+
         // Кнопка входа
         binding.buttonLogin1.setOnClickListener(v -> {
             String email = binding.emailText1.getText().toString().trim();
@@ -85,6 +88,41 @@ public class LoginActivity extends AppCompatActivity {
             Intent intent = new Intent(LoginActivity.this, PoliticalActivity.class);
             startActivity(intent);
         });
+    }
+
+    // ВАЖНО: Метод для сброса всех onDisconnect операций
+    private void resetAllOnDisconnect() {
+        String currentUserId = FirebaseAuth.getInstance().getCurrentUser() != null ?
+                FirebaseAuth.getInstance().getCurrentUser().getUid() : null;
+
+        if (currentUserId != null) {
+            // Отменяем все onDisconnect операции для текущего пользователя
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("isOnline")
+                    .onDisconnect()
+                    .cancel();
+
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("lastOnline")
+                    .onDisconnect()
+                    .cancel();
+
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("lastOnlineTime")
+                    .onDisconnect()
+                    .cancel();
+
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("lastOnlineDate")
+                    .onDisconnect()
+                    .cancel();
+
+            Log.d(TAG, "All onDisconnect operations cancelled for user: " + currentUserId);
+        }
     }
 
     private void setUserOnlineAndNavigate() {
