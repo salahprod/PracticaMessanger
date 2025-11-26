@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.example.androidmessage1.ChatActivity;
 import com.example.androidmessage1.R;
 import com.example.androidmessage1.groups.GroupChatActivity;
@@ -30,6 +31,9 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     private String currentUserId;
     private OnChatClickListener listener;
     private HashMap<String, ValueEventListener> unreadListeners;
+    private HashMap<String, String> avatarCache; // Кэш для аватарок
+    private HashMap<String, Integer> unreadCountCache; // Кэш для непрочитанных сообщений
+    private HashMap<String, Integer> viewHolderPositions; // Отслеживание позиций ViewHolder
 
     public interface OnChatClickListener {
         void onChatClick(int position);
@@ -40,12 +44,18 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         this.currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
         this.listener = listener;
         this.unreadListeners = new HashMap<>();
+        this.avatarCache = new HashMap<>();
+        this.unreadCountCache = new HashMap<>();
+        this.viewHolderPositions = new HashMap<>();
     }
 
     public ChatsAdapter(ArrayList<Chat> chats){
         this.chats = chats;
         this.currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
         this.unreadListeners = new HashMap<>();
+        this.avatarCache = new HashMap<>();
+        this.unreadCountCache = new HashMap<>();
+        this.viewHolderPositions = new HashMap<>();
     }
 
     @NonNull
@@ -58,6 +68,10 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     @Override
     public void onBindViewHolder(@NonNull ChatViewHolder holder, int position) {
         Chat chat = chats.get(position);
+        String chatId = chat.getChat_id();
+
+        // Сохраняем позицию ViewHolder для этого чата
+        viewHolderPositions.put(chatId, position);
 
         holder.username_tv.setText(chat.getChat_name());
 
@@ -75,17 +89,28 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         holder.last_message_tv.setTextColor(0xFF757575);
         holder.last_message_tv.setTypeface(holder.last_message_tv.getTypeface(), android.graphics.Typeface.NORMAL);
 
-        // Настраиваем слушатели для непрочитанных сообщений
-        if (!chat.isGroup()) {
-            setupUnreadMessagesListener(chat.getChat_id(), holder);
+        // Проверяем кэш непрочитанных сообщений
+        Integer cachedUnreadCount = unreadCountCache.get(chatId);
+        if (cachedUnreadCount != null) {
+            updateUnreadBadge(holder, cachedUnreadCount);
         } else {
-            setupGroupUnreadMessagesListener(chat.getChat_id(), holder);
+            // Если нет в кэше, устанавливаем 0 и запускаем слушатель
+            updateUnreadBadge(holder, 0);
         }
 
+        // Настраиваем слушатели для непрочитанных сообщений
+        if (!chat.isGroup()) {
+            setupUnreadMessagesListener(chatId, holder);
+        } else {
+            setupGroupUnreadMessagesListener(chatId, holder);
+        }
+
+        // Устанавливаем placeholder аватарку
         holder.profile_iv.setImageResource(R.drawable.artem);
 
+        // Загружаем аватарку с кэшированием
         if (chat.isGroup()) {
-            loadGroupAvatar(holder, chat.getChat_id(), position);
+            loadGroupAvatar(holder, chatId, position);
         } else {
             loadUserAvatar(holder, chat.getOther_user_id(), position);
         }
@@ -96,12 +121,12 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             } else {
                 if (chat.isGroup()) {
                     Intent intent = new Intent(holder.itemView.getContext(), GroupChatActivity.class);
-                    intent.putExtra("groupId", chat.getChat_id());
+                    intent.putExtra("groupId", chatId);
                     intent.putExtra("groupName", chat.getChat_name());
                     holder.itemView.getContext().startActivity(intent);
                 } else {
                     Intent intent = new Intent(holder.itemView.getContext(), ChatActivity.class);
-                    intent.putExtra("chatId", chat.getChat_id());
+                    intent.putExtra("chatId", chatId);
                     intent.putExtra("otherUserId", chat.getOther_user_id());
                     holder.itemView.getContext().startActivity(intent);
                 }
@@ -132,6 +157,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                         String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
                         Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
 
+                        // ВАЖНО: Считаем только сообщения от других пользователей, которые не прочитаны
                         if (ownerId != null &&
                                 !ownerId.equals(currentUserId) &&
                                 (isRead == null || !isRead)) {
@@ -140,7 +166,20 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                     }
                 }
 
-                updateUnreadBadge(holder, unreadCount);
+                // Сохраняем в кэш
+                unreadCountCache.put(chatId, unreadCount);
+
+                // Обновляем UI только если ViewHolder все еще на правильной позиции
+                Integer currentPosition = viewHolderPositions.get(chatId);
+                if (currentPosition != null && holder.getAdapterPosition() == currentPosition) {
+                    // Обновляем UI только если количество изменилось
+                    Object currentTag = holder.itemView.getTag();
+                    if (currentTag == null || !currentTag.equals(unreadCount)) {
+                        updateUnreadBadge(holder, unreadCount);
+                        holder.itemView.setTag(unreadCount);
+                    }
+                }
+
                 Log.d("ChatsAdapter", "Unread messages in chat " + chatId + ": " + unreadCount);
             }
 
@@ -148,6 +187,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             public void onCancelled(@NonNull DatabaseError error) {
                 Log.e("ChatsAdapter", "Unread messages listener cancelled", error.toException());
                 updateUnreadBadge(holder, 0);
+                unreadCountCache.put(chatId, 0);
             }
         };
 
@@ -181,6 +221,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                         String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
                         Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
 
+                        // ВАЖНО: Считаем только сообщения от других пользователей, которые не прочитаны
                         if (ownerId != null &&
                                 !ownerId.equals(currentUserId) &&
                                 (isRead == null || !isRead)) {
@@ -189,7 +230,20 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                     }
                 }
 
-                updateUnreadBadge(holder, unreadCount);
+                // Сохраняем в кэш
+                unreadCountCache.put(groupId, unreadCount);
+
+                // Обновляем UI только если ViewHolder все еще на правильной позиции
+                Integer currentPosition = viewHolderPositions.get(groupId);
+                if (currentPosition != null && holder.getAdapterPosition() == currentPosition) {
+                    // Обновляем UI только если количество изменилось
+                    Object currentTag = holder.itemView.getTag();
+                    if (currentTag == null || !currentTag.equals(unreadCount)) {
+                        updateUnreadBadge(holder, unreadCount);
+                        holder.itemView.setTag(unreadCount);
+                    }
+                }
+
                 Log.d("ChatsAdapter", "Unread messages in group " + groupId + ": " + unreadCount);
             }
 
@@ -197,6 +251,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             public void onCancelled(@NonNull DatabaseError error) {
                 Log.e("ChatsAdapter", "Group unread messages listener cancelled", error.toException());
                 updateUnreadBadge(holder, 0);
+                unreadCountCache.put(groupId, 0);
             }
         };
 
@@ -252,6 +307,15 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                                 messageSnapshot.getRef().child("isRead").setValue(true);
                             }
                         }
+
+                        // ВАЖНО: Обновляем кэш после отметки как прочитанные
+                        unreadCountCache.put(chatId, 0);
+
+                        // Принудительно обновляем UI для этого чата
+                        Integer position = viewHolderPositions.get(chatId);
+                        if (position != null && position >= 0 && position < chats.size()) {
+                            notifyItemChanged(position);
+                        }
                     }
 
                     @Override
@@ -276,6 +340,15 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                                 messageSnapshot.getRef().child("isRead").setValue(true);
                             }
                         }
+
+                        // ВАЖНО: Обновляем кэш после отметки как прочитанные
+                        unreadCountCache.put(groupId, 0);
+
+                        // Принудительно обновляем UI для этой группы
+                        Integer position = viewHolderPositions.get(groupId);
+                        if (position != null && position >= 0 && position < chats.size()) {
+                            notifyItemChanged(position);
+                        }
                     }
 
                     @Override
@@ -287,6 +360,14 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
 
     private void loadUserAvatar(ChatViewHolder holder, String userId, int position) {
         final int currentPosition = position;
+
+        // Проверяем кэш
+        String cachedAvatar = avatarCache.get("user_" + userId);
+        if (cachedAvatar != null) {
+            // Используем кэшированную аватарку
+            loadAvatarWithGlide(holder, cachedAvatar, currentPosition);
+            return;
+        }
 
         FirebaseDatabase.getInstance().getReference().child("Users").child(userId)
                 .child("profileImage").get()
@@ -302,11 +383,9 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                                 String profileImageUrl = task.getResult().getValue().toString();
 
                                 if (profileImageUrl != null && !profileImageUrl.isEmpty()) {
-                                    Glide.with(holder.itemView.getContext())
-                                            .load(profileImageUrl)
-                                            .placeholder(R.drawable.artem)
-                                            .error(R.drawable.artem)
-                                            .into(holder.profile_iv);
+                                    // Сохраняем в кэш
+                                    avatarCache.put("user_" + userId, profileImageUrl);
+                                    loadAvatarWithGlide(holder, profileImageUrl, currentPosition);
                                 } else {
                                     holder.profile_iv.setImageResource(R.drawable.artem);
                                 }
@@ -323,6 +402,14 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     private void loadGroupAvatar(ChatViewHolder holder, String groupId, int position) {
         final int currentPosition = position;
 
+        // Проверяем кэш
+        String cachedAvatar = avatarCache.get("group_" + groupId);
+        if (cachedAvatar != null) {
+            // Используем кэшированную аватарку
+            loadAvatarWithGlide(holder, cachedAvatar, currentPosition);
+            return;
+        }
+
         FirebaseDatabase.getInstance().getReference().child("Groups").child(groupId)
                 .child("groupImage").get()
                 .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
@@ -337,11 +424,9 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                                 String groupImageUrl = task.getResult().getValue().toString();
 
                                 if (groupImageUrl != null && !groupImageUrl.isEmpty()) {
-                                    Glide.with(holder.itemView.getContext())
-                                            .load(groupImageUrl)
-                                            .placeholder(R.drawable.artem)
-                                            .error(R.drawable.artem)
-                                            .into(holder.profile_iv);
+                                    // Сохраняем в кэш
+                                    avatarCache.put("group_" + groupId, groupImageUrl);
+                                    loadAvatarWithGlide(holder, groupImageUrl, currentPosition);
                                 } else {
                                     holder.profile_iv.setImageResource(R.drawable.artem);
                                 }
@@ -353,6 +438,20 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                         }
                     }
                 });
+    }
+
+    private void loadAvatarWithGlide(ChatViewHolder holder, String imageUrl, int position) {
+        if (holder.getAdapterPosition() != position) {
+            return;
+        }
+
+        Glide.with(holder.itemView.getContext())
+                .load(imageUrl)
+                .diskCacheStrategy(DiskCacheStrategy.ALL) // Кэшируем на диске
+                .placeholder(R.drawable.artem)
+                .error(R.drawable.artem)
+                .dontAnimate() // Отключаем анимацию для предотвращения мерцания
+                .into(holder.profile_iv);
     }
 
     @Override
@@ -369,5 +468,36 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             }
         }
         unreadListeners.clear();
+        avatarCache.clear(); // Очищаем кэш
+        unreadCountCache.clear(); // Очищаем кэш непрочитанных
+        viewHolderPositions.clear(); // Очищаем позиции
+    }
+
+    @Override
+    public void onViewRecycled(@NonNull ChatViewHolder holder) {
+        super.onViewRecycled(holder);
+        // Очищаем тег при переиспользовании ViewHolder
+        holder.itemView.setTag(null);
+    }
+
+    // Метод для обновления конкретного чата
+    public void updateChat(Chat updatedChat) {
+        for (int i = 0; i < chats.size(); i++) {
+            Chat chat = chats.get(i);
+            if (chat.getChat_id().equals(updatedChat.getChat_id())) {
+                chats.set(i, updatedChat);
+                notifyItemChanged(i);
+                break;
+            }
+        }
+    }
+
+    // Метод для принудительного обновления счетчика непрочитанных
+    public void forceRefreshUnreadCount(String chatId) {
+        unreadCountCache.remove(chatId);
+        Integer position = viewHolderPositions.get(chatId);
+        if (position != null && position >= 0 && position < chats.size()) {
+            notifyItemChanged(position);
+        }
     }
 }

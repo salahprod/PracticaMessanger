@@ -414,14 +414,15 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
-        // ВАЖНО: При отправке сообщения устанавливаем isRead = false для получателя
+        // ВАЖНО: При отправке сообщения устанавливаем isRead = true только для отправителя
+        // Для получателя сообщение будет непрочитанным (isRead = false)
         HashMap<String, Object> messageInfo = new HashMap<>();
         messageInfo.put("id", messageKey);
         messageInfo.put("text", messageText);
         messageInfo.put("ownerId", currentUserId);
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
-        messageInfo.put("isRead", false); // ВАЖНО: для получателя сообщение непрочитанное
+        messageInfo.put("isRead", false); // ВАЖНО: по умолчанию сообщение непрочитанное
 
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
@@ -432,7 +433,7 @@ public class ChatActivity extends AppCompatActivity {
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
                         updateLastMessageInChat(messageText, System.currentTimeMillis());
-                        Log.d("ChatActivity", "Message sent with isRead = false");
+                        Log.d("ChatActivity", "Message sent with isRead = false (will be marked as read by receiver)");
                     } else {
                         Toast.makeText(ChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
                     }
