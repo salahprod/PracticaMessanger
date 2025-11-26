@@ -2,6 +2,7 @@ package com.example.androidmessage1.bottomnav.new_chat;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -14,11 +15,13 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.DividerItemDecoration;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.example.androidmessage1.ChatActivity;
+import com.example.androidmessage1.R;
 import com.example.androidmessage1.databinding.FragmentNewChatBinding;
 import com.example.androidmessage1.groups.Group;
 import com.example.androidmessage1.groups.GroupChatActivity;
@@ -50,12 +53,21 @@ public class NewChatFragment extends Fragment {
     // HashMap для хранения статусов пользователей
     private HashMap<String, UserStatus> userStatusMap = new HashMap<>();
 
+    // HashMap для хранения непрочитанных сообщений
+    private HashMap<String, Integer> unreadCountsMap = new HashMap<>();
+    private HashMap<String, ValueEventListener> unreadListeners = new HashMap<>();
+
+    // Слушатели для статусов
+    private ValueEventListener userStatusListener;
+    private ValueEventListener usersListListener;
+    private ValueEventListener groupsListListener;
+
     private class UserStatus {
         boolean isOnline;
         long lastOnline;
         String lastOnlineTime;
         String lastOnlineDate;
-        boolean hasOnlineData; // Флаг, что у пользователя есть данные о статусе
+        boolean hasOnlineData;
 
         UserStatus(boolean isOnline, long lastOnline, String lastOnlineTime, String lastOnlineDate, boolean hasOnlineData) {
             this.isOnline = isOnline;
@@ -81,6 +93,12 @@ public class NewChatFragment extends Fragment {
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+        Log.d("NewChatFragment", "Fragment resumed");
+    }
+
+    @Override
     public void onPause() {
         super.onPause();
         hideKeyboardDelayed();
@@ -95,8 +113,54 @@ public class NewChatFragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        Log.d("NewChatFragment", "onDestroyView called");
         hideKeyboardImmediately();
+        cleanupAllListeners();
         binding = null;
+    }
+
+    private void cleanupAllListeners() {
+        // Очищаем слушатели непрочитанных сообщений
+        for (ValueEventListener listener : unreadListeners.values()) {
+            try {
+                FirebaseDatabase.getInstance().getReference().removeEventListener(listener);
+            } catch (Exception e) {
+                Log.e("NewChatFragment", "Error removing unread listener", e);
+            }
+        }
+        unreadListeners.clear();
+
+        // Очищаем слушатель статусов
+        if (userStatusListener != null) {
+            try {
+                FirebaseDatabase.getInstance().getReference("Users").removeEventListener(userStatusListener);
+            } catch (Exception e) {
+                Log.e("NewChatFragment", "Error removing status listener", e);
+            }
+            userStatusListener = null;
+        }
+
+        // Очищаем слушатели списков
+        if (usersListListener != null) {
+            try {
+                FirebaseDatabase.getInstance().getReference("Users").removeEventListener(usersListListener);
+            } catch (Exception e) {
+                Log.e("NewChatFragment", "Error removing users list listener", e);
+            }
+            usersListListener = null;
+        }
+
+        if (groupsListListener != null) {
+            try {
+                FirebaseDatabase.getInstance().getReference("Users").child(currentUserId).child("groups").removeEventListener(groupsListListener);
+            } catch (Exception e) {
+                Log.e("NewChatFragment", "Error removing groups list listener", e);
+            }
+            groupsListListener = null;
+        }
+
+        unreadCountsMap.clear();
+        userStatusMap.clear();
     }
 
     private void setupRecyclerView() {
@@ -161,6 +225,8 @@ public class NewChatFragment extends Fragment {
     }
 
     private void performSearch(String query) {
+        if (binding == null) return;
+
         searchResults.clear();
 
         if (query.isEmpty()) {
@@ -179,9 +245,24 @@ public class NewChatFragment extends Fragment {
                 UserStatus status = userStatusMap.get(userId);
                 if (status != null) {
                     user.setLastMessage(formatUserStatus(status));
+                    // Устанавливаем цвет статуса
+                    user.setStatusColor(getStatusColor(status.isOnline));
                 } else {
                     user.setLastMessage("offline");
+                    user.setStatusColor(Color.GRAY);
                 }
+
+                // Добавляем количество непрочитанных сообщений
+                Integer unreadCount = unreadCountsMap.get(userId);
+                if (unreadCount != null && unreadCount > 0) {
+                    user.setUnreadCount(unreadCount);
+                } else {
+                    user.setUnreadCount(0);
+                }
+
+                // Устанавливаем ID пользователя
+                user.setUserId(userId);
+
                 searchResults.add(user);
             }
         }
@@ -200,9 +281,18 @@ public class NewChatFragment extends Fragment {
                 int membersCount = group.getMembers().size();
                 String membersText = membersCount + " participant" + (membersCount > 1 ? "s" : "");
                 groupAsUser.setLastMessage(membersText);
+                groupAsUser.setStatusColor(Color.GRAY);
 
-                // Сохраняем ID группы в unreadCount для идентификации
-                groupAsUser.setUnreadCount(-1); // -1 означает, что это группа
+                // Добавляем количество непрочитанных сообщений в группе
+                Integer unreadCount = unreadCountsMap.get("group_" + group.getGroupId());
+                if (unreadCount != null && unreadCount > 0) {
+                    groupAsUser.setUnreadCount(unreadCount);
+                } else {
+                    groupAsUser.setUnreadCount(0);
+                }
+
+                // Устанавливаем специальный идентификатор для группы
+                groupAsUser.setUserId("group_" + group.getGroupId());
 
                 searchResults.add(groupAsUser);
             }
@@ -218,9 +308,17 @@ public class NewChatFragment extends Fragment {
         updateAdapter();
     }
 
+    private int getStatusColor(boolean isOnline) {
+        if (isOnline) {
+            return ContextCompat.getColor(requireContext(), R.color.online_green);
+        } else {
+            return Color.GRAY;
+        }
+    }
+
     private String formatUserStatus(UserStatus status) {
         if (!status.hasOnlineData) {
-            return "offline"; // Пользователь никогда не был онлайн
+            return "offline";
         }
 
         if (status.isOnline) {
@@ -236,7 +334,6 @@ public class NewChatFragment extends Fragment {
         long minutes = diff / (60 * 1000);
         long hours = diff / (60 * 60 * 1000);
 
-        // Получаем текущую дату и дату последней активности
         java.util.Calendar currentCal = java.util.Calendar.getInstance();
         java.util.Calendar lastOnlineCal = java.util.Calendar.getInstance();
         lastOnlineCal.setTimeInMillis(lastOnlineTimestamp);
@@ -246,11 +343,9 @@ public class NewChatFragment extends Fragment {
         int lastOnlineDay = lastOnlineCal.get(java.util.Calendar.DAY_OF_YEAR);
         int lastOnlineYear = lastOnlineCal.get(java.util.Calendar.YEAR);
 
-        // Проверяем, был ли пользователь онлайн вчера
         boolean isYesterday = (currentDay - lastOnlineDay == 1 && currentYear == lastOnlineYear) ||
                 (currentDay == 1 && lastOnlineDay >= 365 && currentYear - lastOnlineYear == 1);
 
-        // Проверяем, был ли пользователь онлайн позавчера или раньше
         boolean isMoreThanTwoDays = (currentDay - lastOnlineDay > 1 && currentYear == lastOnlineYear) ||
                 (currentYear - lastOnlineYear > 0);
 
@@ -263,7 +358,6 @@ public class NewChatFragment extends Fragment {
         } else if (isYesterday) {
             return "was online yesterday at " + (lastOnlineTime != null ? lastOnlineTime : "unknown time");
         } else if (isMoreThanTwoDays) {
-            // Для активности старше 2 дней показываем полную дату и время
             SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy 'at' HH:mm", Locale.getDefault());
             return "was online " + dateFormat.format(new Date(lastOnlineTimestamp));
         } else {
@@ -281,34 +375,24 @@ public class NewChatFragment extends Fragment {
 
                 User selectedItem = searchResults.get(position);
 
-                // Проверяем, это группа или пользователь (unreadCount = -1 означает группу)
-                if (selectedItem.getUnreadCount() == -1) {
-                    // Это группа - находим ID группы по имени
+                // Проверяем, это группа или пользователь
+                if (selectedItem.getUserId() != null && selectedItem.getUserId().startsWith("group_")) {
+                    // Это группа
+                    String groupId = selectedItem.getUserId().substring(6); // Убираем "group_" префикс
                     String groupName = selectedItem.getUsername();
-                    String groupId = findGroupIdByName(groupName);
                     if (groupId != null) {
                         openGroupChat(groupId, groupName);
                     }
                 } else {
-                    // Это пользователь - находим его ID
-                    int userIndex = usersList.indexOf(selectedItem);
-                    if (userIndex != -1 && userIndex < userIdsList.size()) {
-                        String selectedUserId = userIdsList.get(userIndex);
+                    // Это пользователь
+                    String selectedUserId = selectedItem.getUserId();
+                    if (selectedUserId != null && !selectedUserId.isEmpty()) {
                         checkIfChatExistsBeforeCreate(selectedUserId);
                     }
                 }
             }
         });
         binding.userRv.setAdapter(adapter);
-    }
-
-    private String findGroupIdByName(String groupName) {
-        for (Group group : groupsList) {
-            if (group.getGroupName().equals(groupName)) {
-                return group.getGroupId();
-            }
-        }
-        return null;
     }
 
     private void loadUsersAndGroups() {
@@ -319,175 +403,317 @@ public class NewChatFragment extends Fragment {
     }
 
     private void loadUsers() {
-        FirebaseDatabase.getInstance().getReference()
-                .child("Users")
+        if (usersListListener != null) {
+            FirebaseDatabase.getInstance().getReference("Users").removeEventListener(usersListListener);
+        }
+
+        usersListListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (binding == null) return;
+
+                usersList.clear();
+                userIdsList.clear();
+                userStatusMap.clear();
+
+                String currentUserEmail = FirebaseAuth.getInstance().getCurrentUser().getEmail();
+
+                for (DataSnapshot userSnapshot : snapshot.getChildren()) {
+                    String userId = userSnapshot.getKey();
+                    if (userId == null) continue;
+
+                    String userLogin = userSnapshot.child("login").getValue(String.class);
+                    String userEmail = userSnapshot.child("email").getValue(String.class);
+
+                    if (userLogin == null || userLogin.trim().isEmpty()) {
+                        continue;
+                    }
+
+                    if (currentUserEmail != null && currentUserEmail.equals(userEmail)) {
+                        continue;
+                    }
+
+                    String profileImage = userSnapshot.child("profileImage").getValue(String.class);
+                    if (profileImage == null) {
+                        profileImage = "";
+                    }
+
+                    // Загружаем статус пользователя
+                    Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
+                    Long lastOnline = userSnapshot.child("lastOnline").getValue(Long.class);
+                    String lastOnlineTime = userSnapshot.child("lastOnlineTime").getValue(String.class);
+                    String lastOnlineDate = userSnapshot.child("lastOnlineDate").getValue(String.class);
+
+                    boolean hasOnlineData = (isOnline != null || lastOnline != null ||
+                            lastOnlineTime != null || lastOnlineDate != null);
+
+                    if (!hasOnlineData) {
+                        isOnline = false;
+                        lastOnline = 0L;
+                        lastOnlineTime = "";
+                        lastOnlineDate = "";
+                    } else {
+                        if (isOnline == null) isOnline = false;
+                        if (lastOnline == null) lastOnline = 0L;
+                        if (lastOnlineTime == null) lastOnlineTime = "";
+                        if (lastOnlineDate == null) lastOnlineDate = "";
+                    }
+
+                    userStatusMap.put(userId, new UserStatus(isOnline, lastOnline, lastOnlineTime, lastOnlineDate, hasOnlineData));
+
+                    User user = new User(userLogin, profileImage);
+                    user.setLastMessage(formatUserStatus(userStatusMap.get(userId)));
+                    user.setStatusColor(getStatusColor(isOnline));
+                    user.setUserId(userId);
+
+                    usersList.add(user);
+                    userIdsList.add(userId);
+
+                    // Настраиваем слушатель непрочитанных сообщений для этого пользователя
+                    setupUnreadMessagesListener(userId);
+                }
+
+                Log.d("NewChatFragment", "Loaded " + usersList.size() + " users with status");
+
+                setupUserStatusListener();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                if (binding == null) return;
+                Toast.makeText(getContext(), "Error loading users", Toast.LENGTH_SHORT).show();
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("Users").addValueEventListener(usersListListener);
+    }
+
+    private void setupUnreadMessagesListener(String userId) {
+        // Ищем существующий чат между текущим пользователем и этим пользователем
+        FirebaseDatabase.getInstance().getReference("Chats")
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        if (binding == null) return;
+                        String chatId = null;
+                        for (DataSnapshot chatSnapshot : snapshot.getChildren()) {
+                            String user1 = chatSnapshot.child("user1").getValue(String.class);
+                            String user2 = chatSnapshot.child("user2").getValue(String.class);
 
-                        usersList.clear();
-                        userIdsList.clear();
-                        userStatusMap.clear();
-
-                        String currentUserEmail = FirebaseAuth.getInstance().getCurrentUser().getEmail();
-
-                        for (DataSnapshot userSnapshot : snapshot.getChildren()) {
-                            String userId = userSnapshot.getKey();
-
-                            String userLogin = userSnapshot.child("login").getValue(String.class);
-                            String userEmail = userSnapshot.child("email").getValue(String.class);
-
-                            if (userLogin == null || userLogin.trim().isEmpty()) {
-                                continue;
+                            if (user1 != null && user2 != null) {
+                                if ((user1.equals(currentUserId) && user2.equals(userId)) ||
+                                        (user1.equals(userId) && user2.equals(currentUserId))) {
+                                    chatId = chatSnapshot.getKey();
+                                    break;
+                                }
                             }
-
-                            if (currentUserEmail != null && currentUserEmail.equals(userEmail)) {
-                                continue;
-                            }
-
-                            String profileImage = userSnapshot.child("profileImage").getValue(String.class);
-                            if (profileImage == null) {
-                                profileImage = "";
-                            }
-
-                            // Загружаем статус пользователя
-                            Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
-                            Long lastOnline = userSnapshot.child("lastOnline").getValue(Long.class);
-                            String lastOnlineTime = userSnapshot.child("lastOnlineTime").getValue(String.class);
-                            String lastOnlineDate = userSnapshot.child("lastOnlineDate").getValue(String.class);
-
-                            // Проверяем, есть ли у пользователя данные о статусе
-                            boolean hasOnlineData = (isOnline != null || lastOnline != null ||
-                                    lastOnlineTime != null || lastOnlineDate != null);
-
-                            // Если данных нет, устанавливаем офлайн статус
-                            if (!hasOnlineData) {
-                                isOnline = false;
-                                lastOnline = 0L;
-                                lastOnlineTime = "";
-                                lastOnlineDate = "";
-                            } else {
-                                // Если какие-то данные есть, но не все, устанавливаем значения по умолчанию
-                                if (isOnline == null) isOnline = false;
-                                if (lastOnline == null) lastOnline = 0L;
-                                if (lastOnlineTime == null) lastOnlineTime = "";
-                                if (lastOnlineDate == null) lastOnlineDate = "";
-                            }
-
-                            // Сохраняем статус в HashMap
-                            userStatusMap.put(userId, new UserStatus(isOnline, lastOnline, lastOnlineTime, lastOnlineDate, hasOnlineData));
-
-                            User user = new User(userLogin, profileImage);
-                            // Устанавливаем статус как lastMessage
-                            user.setLastMessage(formatUserStatus(userStatusMap.get(userId)));
-
-                            usersList.add(user);
-                            userIdsList.add(userId);
                         }
 
-                        Log.d("NewChatFragment", "Loaded " + usersList.size() + " users with status");
-
-                        // Запускаем слушатель для обновления статусов в реальном времени
-                        setupUserStatusListener();
+                        if (chatId != null) {
+                            setupChatUnreadListener(chatId, userId);
+                        }
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
-                        if (binding == null) return;
-                        Toast.makeText(getContext(), "Error loading users", Toast.LENGTH_SHORT).show();
+                        Log.e("NewChatFragment", "Error finding chat for user: " + userId, error.toException());
                     }
                 });
+    }
+
+    private void setupChatUnreadListener(String chatId, String userId) {
+        // Удаляем предыдущий слушатель если есть
+        if (unreadListeners.containsKey(chatId)) {
+            FirebaseDatabase.getInstance().getReference("Chats")
+                    .child(chatId)
+                    .child("messages")
+                    .removeEventListener(unreadListeners.get(chatId));
+        }
+
+        ValueEventListener unreadMessagesListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                int unreadCount = 0;
+
+                if (snapshot.exists()) {
+                    for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
+                        String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
+                        Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
+
+                        if (ownerId != null &&
+                                !ownerId.equals(currentUserId) &&
+                                (isRead == null || !isRead)) {
+                            unreadCount++;
+                        }
+                    }
+                }
+
+                // Сохраняем в кэш
+                unreadCountsMap.put(userId, unreadCount);
+
+                // Обновляем UI если этот пользователь в результатах поиска
+                if (binding != null && !binding.searchEt.getText().toString().trim().isEmpty()) {
+                    performSearch(binding.searchEt.getText().toString().trim());
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("NewChatFragment", "Unread messages listener cancelled", error.toException());
+                unreadCountsMap.put(userId, 0);
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("Chats")
+                .child(chatId)
+                .child("messages")
+                .addValueEventListener(unreadMessagesListener);
+
+        unreadListeners.put(chatId, unreadMessagesListener);
+    }
+
+    private void setupGroupUnreadListener(String groupId) {
+        String listenerKey = "group_" + groupId;
+
+        if (unreadListeners.containsKey(listenerKey)) {
+            FirebaseDatabase.getInstance().getReference("Groups")
+                    .child(groupId)
+                    .child("messages")
+                    .removeEventListener(unreadListeners.get(listenerKey));
+        }
+
+        ValueEventListener groupUnreadListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                int unreadCount = 0;
+
+                if (snapshot.exists()) {
+                    for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
+                        String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
+                        Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
+
+                        if (ownerId != null &&
+                                !ownerId.equals(currentUserId) &&
+                                (isRead == null || !isRead)) {
+                            unreadCount++;
+                        }
+                    }
+                }
+
+                // Сохраняем в кэш
+                unreadCountsMap.put("group_" + groupId, unreadCount);
+
+                // Обновляем UI если эта группа в результатах поиска
+                if (binding != null && !binding.searchEt.getText().toString().trim().isEmpty()) {
+                    performSearch(binding.searchEt.getText().toString().trim());
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("NewChatFragment", "Group unread messages listener cancelled", error.toException());
+                unreadCountsMap.put("group_" + groupId, 0);
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("Groups")
+                .child(groupId)
+                .child("messages")
+                .addValueEventListener(groupUnreadListener);
+
+        unreadListeners.put(listenerKey, groupUnreadListener);
     }
 
     private void setupUserStatusListener() {
-        FirebaseDatabase.getInstance().getReference("Users")
-                .addValueEventListener(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        if (binding == null) return;
+        if (userStatusListener != null) {
+            FirebaseDatabase.getInstance().getReference("Users").removeEventListener(userStatusListener);
+        }
 
-                        for (DataSnapshot userSnapshot : snapshot.getChildren()) {
-                            String userId = userSnapshot.getKey();
+        userStatusListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (binding == null) return;
 
-                            // Обновляем только существующих пользователей
-                            if (userIdsList.contains(userId)) {
-                                Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
-                                Long lastOnline = userSnapshot.child("lastOnline").getValue(Long.class);
-                                String lastOnlineTime = userSnapshot.child("lastOnlineTime").getValue(String.class);
-                                String lastOnlineDate = userSnapshot.child("lastOnlineDate").getValue(String.class);
+                for (DataSnapshot userSnapshot : snapshot.getChildren()) {
+                    String userId = userSnapshot.getKey();
+                    if (userId == null) continue;
 
-                                // Проверяем, есть ли у пользователя данные о статусе
-                                boolean hasOnlineData = (isOnline != null || lastOnline != null ||
-                                        lastOnlineTime != null || lastOnlineDate != null);
+                    if (userIdsList.contains(userId)) {
+                        Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
+                        Long lastOnline = userSnapshot.child("lastOnline").getValue(Long.class);
+                        String lastOnlineTime = userSnapshot.child("lastOnlineTime").getValue(String.class);
+                        String lastOnlineDate = userSnapshot.child("lastOnlineDate").getValue(String.class);
 
-                                // Если данных нет, устанавливаем офлайн статус
-                                if (!hasOnlineData) {
-                                    isOnline = false;
-                                    lastOnline = 0L;
-                                    lastOnlineTime = "";
-                                    lastOnlineDate = "";
-                                } else {
-                                    // Если какие-то данные есть, но не все, устанавливаем значения по умолчанию
-                                    if (isOnline == null) isOnline = false;
-                                    if (lastOnline == null) lastOnline = 0L;
-                                    if (lastOnlineTime == null) lastOnlineTime = "";
-                                    if (lastOnlineDate == null) lastOnlineDate = "";
-                                }
+                        boolean hasOnlineData = (isOnline != null || lastOnline != null ||
+                                lastOnlineTime != null || lastOnlineDate != null);
 
-                                // Обновляем статус в HashMap
-                                userStatusMap.put(userId, new UserStatus(isOnline, lastOnline, lastOnlineTime, lastOnlineDate, hasOnlineData));
-
-                                // Обновляем статус в списке пользователей
-                                int userIndex = userIdsList.indexOf(userId);
-                                if (userIndex != -1 && userIndex < usersList.size()) {
-                                    User user = usersList.get(userIndex);
-                                    user.setLastMessage(formatUserStatus(userStatusMap.get(userId)));
-                                }
-                            }
+                        if (!hasOnlineData) {
+                            isOnline = false;
+                            lastOnline = 0L;
+                            lastOnlineTime = "";
+                            lastOnlineDate = "";
+                        } else {
+                            if (isOnline == null) isOnline = false;
+                            if (lastOnline == null) lastOnline = 0L;
+                            if (lastOnlineTime == null) lastOnlineTime = "";
+                            if (lastOnlineDate == null) lastOnlineDate = "";
                         }
 
-                        // Обновляем адаптер если есть активный поиск
-                        if (!binding.searchEt.getText().toString().trim().isEmpty()) {
-                            performSearch(binding.searchEt.getText().toString().trim());
+                        userStatusMap.put(userId, new UserStatus(isOnline, lastOnline, lastOnlineTime, lastOnlineDate, hasOnlineData));
+
+                        int userIndex = userIdsList.indexOf(userId);
+                        if (userIndex != -1 && userIndex < usersList.size()) {
+                            User user = usersList.get(userIndex);
+                            user.setLastMessage(formatUserStatus(userStatusMap.get(userId)));
+                            user.setStatusColor(getStatusColor(isOnline));
                         }
                     }
+                }
 
-                    @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        Log.e("NewChatFragment", "Failed to listen to user status updates", error.toException());
-                    }
-                });
+                if (binding != null && !binding.searchEt.getText().toString().trim().isEmpty()) {
+                    performSearch(binding.searchEt.getText().toString().trim());
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("NewChatFragment", "Failed to listen to user status updates", error.toException());
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("Users").addValueEventListener(userStatusListener);
     }
 
     private void loadUserGroups() {
-        FirebaseDatabase.getInstance().getReference("Users")
-                .child(currentUserId)
-                .child("groups")
-                .addListenerForSingleValueEvent(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        if (binding == null) return;
+        if (groupsListListener != null) {
+            FirebaseDatabase.getInstance().getReference("Users").child(currentUserId).child("groups").removeEventListener(groupsListListener);
+        }
 
-                        groupsList.clear();
-                        groupIdsList.clear();
+        groupsListListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (binding == null) return;
 
-                        if (snapshot.exists()) {
-                            for (DataSnapshot groupSnapshot : snapshot.getChildren()) {
-                                String groupId = groupSnapshot.getKey();
-                                if (groupId != null) {
-                                    loadGroupDetails(groupId);
-                                }
-                            }
+                groupsList.clear();
+                groupIdsList.clear();
+
+                if (snapshot.exists()) {
+                    for (DataSnapshot groupSnapshot : snapshot.getChildren()) {
+                        String groupId = groupSnapshot.getKey();
+                        if (groupId != null) {
+                            loadGroupDetails(groupId);
                         }
-                        Log.d("NewChatFragment", "User is member of " + snapshot.getChildrenCount() + " groups");
                     }
+                }
+                Log.d("NewChatFragment", "User is member of " + snapshot.getChildrenCount() + " groups");
+            }
 
-                    @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        Log.e("NewChatFragment", "Failed to load user groups", error.toException());
-                    }
-                });
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("NewChatFragment", "Failed to load user groups", error.toException());
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("Users").child(currentUserId).child("groups").addValueEventListener(groupsListListener);
     }
 
     private void loadGroupDetails(String groupId) {
@@ -514,6 +740,10 @@ public class NewChatFragment extends Fragment {
                                 if (!exists) {
                                     groupsList.add(group);
                                     groupIdsList.add(groupId);
+
+                                    // Настраиваем слушатель непрочитанных сообщений для группы
+                                    setupGroupUnreadListener(groupId);
+
                                     Log.d("NewChatFragment", "Loaded group: " + group.getGroupName());
                                 }
                             }

@@ -43,12 +43,15 @@ public class FragmentChat extends Fragment {
     private ValueEventListener groupsListListener;
     private String currentUserId;
     private int scrollPosition = 0;
-    private boolean isFirstLoad = true;
+    private boolean shouldRestoreScrollPosition = false;
+    private LinearLayoutManager layoutManager;
+    private boolean isFragmentDestroyed = false;
 
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         binding = FragmentChatsBinding.inflate(inflater, container, false);
+        isFragmentDestroyed = false;
 
         try {
             currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
@@ -67,20 +70,20 @@ public class FragmentChat extends Fragment {
     }
 
     private void setupRecyclerView() {
-        LinearLayoutManager layoutManager = new LinearLayoutManager(getContext());
+        layoutManager = new LinearLayoutManager(getContext());
         binding.chatsRv.setLayoutManager(layoutManager);
 
         DividerItemDecoration dividerItemDecoration = new DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL);
         binding.chatsRv.addItemDecoration(dividerItemDecoration);
 
-        // Сохраняем позицию прокрутки
+        // Сохраняем позицию прокрутки при скролле
         binding.chatsRv.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 super.onScrolled(recyclerView, dx, dy);
-                LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerView.getLayoutManager();
                 if (layoutManager != null) {
                     scrollPosition = layoutManager.findFirstVisibleItemPosition();
+                    shouldRestoreScrollPosition = true;
                 }
             }
         });
@@ -109,6 +112,7 @@ public class FragmentChat extends Fragment {
     }
 
     private void loadChats() {
+        // Очищаем предыдущий слушатель если есть
         if (chatsListListener != null) {
             FirebaseDatabase.getInstance().getReference("Chats")
                     .removeEventListener(chatsListListener);
@@ -117,6 +121,8 @@ public class FragmentChat extends Fragment {
         chatsListListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (isFragmentDestroyed || binding == null) return;
+
                 Log.d("FragmentChat", "Chats data changed, total chats: " + snapshot.getChildrenCount());
 
                 // Сохраняем текущую позицию прокрутки
@@ -143,6 +149,8 @@ public class FragmentChat extends Fragment {
 
                 // Обрабатываем новые чаты
                 for (DataSnapshot chatSnapshot : snapshot.getChildren()) {
+                    if (isFragmentDestroyed) return;
+
                     String chatId = chatSnapshot.getKey();
                     if (chatId == null) continue;
 
@@ -167,7 +175,7 @@ public class FragmentChat extends Fragment {
                 // Обновляем список
                 combinedChats.clear();
                 combinedChats.addAll(newChats);
-                sortAndUpdateChatsSilently();
+                sortChatsSilently();
 
                 // Восстанавливаем позицию прокрутки
                 restoreScrollPosition();
@@ -175,6 +183,7 @@ public class FragmentChat extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
+                if (isFragmentDestroyed) return;
                 Log.e("FragmentChat", "Failed to load chats", error.toException());
                 Toast.makeText(getContext(), "Failed to load chats", Toast.LENGTH_SHORT).show();
             }
@@ -185,6 +194,7 @@ public class FragmentChat extends Fragment {
     }
 
     private void loadGroups() {
+        // Очищаем предыдущий слушатель если есть
         if (groupsListListener != null) {
             FirebaseDatabase.getInstance().getReference("Groups")
                     .removeEventListener(groupsListListener);
@@ -193,6 +203,8 @@ public class FragmentChat extends Fragment {
         groupsListListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (isFragmentDestroyed || binding == null) return;
+
                 Log.d("FragmentChat", "Groups data changed, total groups: " + snapshot.getChildrenCount());
 
                 // Сохраняем текущую позицию прокрутки
@@ -219,6 +231,8 @@ public class FragmentChat extends Fragment {
 
                 // Обрабатываем новые группы
                 for (DataSnapshot groupSnapshot : snapshot.getChildren()) {
+                    if (isFragmentDestroyed) return;
+
                     String groupId = groupSnapshot.getKey();
                     if (groupId == null) continue;
 
@@ -234,7 +248,7 @@ public class FragmentChat extends Fragment {
                 // Обновляем список
                 combinedChats.clear();
                 combinedChats.addAll(newChats);
-                sortAndUpdateChatsSilently();
+                sortChatsSilently();
 
                 // Восстанавливаем позицию прокрутки
                 restoreScrollPosition();
@@ -242,6 +256,7 @@ public class FragmentChat extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
+                if (isFragmentDestroyed) return;
                 Log.e("FragmentChat", "Failed to load groups", error.toException());
             }
         };
@@ -251,9 +266,13 @@ public class FragmentChat extends Fragment {
     }
 
     private void setupGroupListener(String groupId) {
+        if (isFragmentDestroyed) return;
+
         ValueEventListener groupListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot groupSnapshot) {
+                if (isFragmentDestroyed || binding == null) return;
+
                 try {
                     Group group = groupSnapshot.getValue(Group.class);
                     if (group != null && group.getMembers() != null && group.getMembers().contains(currentUserId)) {
@@ -268,6 +287,7 @@ public class FragmentChat extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
+                if (isFragmentDestroyed) return;
                 Log.e("FragmentChat", "Group listener cancelled for group: " + groupId, error.toException());
             }
         };
@@ -278,6 +298,8 @@ public class FragmentChat extends Fragment {
     }
 
     private void updateOrAddGroupSilently(Group newGroup) {
+        if (isFragmentDestroyed) return;
+
         String groupId = newGroup.getGroupId();
         int existingIndex = -1;
 
@@ -297,12 +319,12 @@ public class FragmentChat extends Fragment {
             Chat existingChat = combinedChats.get(existingIndex);
             if (needsUpdate(existingChat, groupChat)) {
                 combinedChats.set(existingIndex, groupChat);
-                sortAndUpdateChatsSilently();
+                sortChatsSilently();
             }
         } else {
             // Добавляем новую группу
             combinedChats.add(groupChat);
-            sortAndUpdateChatsSilently();
+            sortChatsSilently();
         }
     }
 
@@ -360,6 +382,8 @@ public class FragmentChat extends Fragment {
     }
 
     private void removeGroupSilently(String groupId) {
+        if (isFragmentDestroyed) return;
+
         for (int i = 0; i < combinedChats.size(); i++) {
             Chat chat = combinedChats.get(i);
             if (chat.isGroup() && chat.getChat_id().equals(groupId)) {
@@ -373,9 +397,13 @@ public class FragmentChat extends Fragment {
     }
 
     private void setupChatListener(String chatId, String otherUserId) {
+        if (isFragmentDestroyed) return;
+
         ValueEventListener chatListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot chatSnapshot) {
+                if (isFragmentDestroyed || binding == null) return;
+
                 try {
                     String lastMessage = chatSnapshot.child("LastMessage").getValue(String.class);
                     Long lastMessageTime = chatSnapshot.child("LastMessageTime").getValue(Long.class);
@@ -393,6 +421,7 @@ public class FragmentChat extends Fragment {
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
+                if (isFragmentDestroyed) return;
                 Log.e("FragmentChat", "Chat listener cancelled for chat: " + chatId, error.toException());
             }
         };
@@ -403,10 +432,14 @@ public class FragmentChat extends Fragment {
     }
 
     private void loadUserInfo(String chatId, String otherUserId, String lastMessage, long lastMessageTime) {
+        if (isFragmentDestroyed) return;
+
         FirebaseDatabase.getInstance().getReference("Users").child(otherUserId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot userSnapshot) {
+                        if (isFragmentDestroyed || binding == null) return;
+
                         String chatName = "Unknown User";
                         if (userSnapshot.exists()) {
                             try {
@@ -437,12 +470,15 @@ public class FragmentChat extends Fragment {
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
+                        if (isFragmentDestroyed) return;
                         Log.e("FragmentChat", "Failed to load user info for user: " + otherUserId, error.toException());
                     }
                 });
     }
 
     private void updateOrAddChatSilently(Chat newChat) {
+        if (isFragmentDestroyed) return;
+
         String chatId = newChat.getChat_id();
         int existingIndex = -1;
 
@@ -460,16 +496,18 @@ public class FragmentChat extends Fragment {
             Chat existingChat = combinedChats.get(existingIndex);
             if (needsUpdate(existingChat, newChat)) {
                 combinedChats.set(existingIndex, newChat);
-                sortAndUpdateChatsSilently();
+                sortChatsSilently();
             }
         } else {
             // Добавляем новый чат
             combinedChats.add(newChat);
-            sortAndUpdateChatsSilently();
+            sortChatsSilently();
         }
     }
 
-    private void sortAndUpdateChatsSilently() {
+    private void sortChatsSilently() {
+        if (isFragmentDestroyed || binding == null) return;
+
         try {
             // Сохраняем позицию перед сортировкой
             saveScrollPosition();
@@ -479,31 +517,34 @@ public class FragmentChat extends Fragment {
                     Long.compare(chat2.getLastMessageTimestamp(), chat1.getLastMessageTimestamp()));
 
             if (chatsAdapter != null) {
+                // Используем notifyDataSetChanged без сброса позиции
                 chatsAdapter.notifyDataSetChanged();
             }
 
             // Восстанавливаем позицию после обновления
             restoreScrollPosition();
 
-            Log.d("FragmentChat", "Chats sorted and updated silently. Total: " + combinedChats.size());
+            Log.d("FragmentChat", "Chats sorted silently. Total: " + combinedChats.size());
         } catch (Exception e) {
             Log.e("FragmentChat", "Error sorting chats", e);
         }
     }
 
     private void saveScrollPosition() {
-        if (binding != null && binding.chatsRv.getLayoutManager() != null) {
-            LinearLayoutManager layoutManager = (LinearLayoutManager) binding.chatsRv.getLayoutManager();
+        if (layoutManager != null) {
             scrollPosition = layoutManager.findFirstVisibleItemPosition();
+            shouldRestoreScrollPosition = true;
         }
     }
 
     private void restoreScrollPosition() {
-        if (binding != null && binding.chatsRv.getLayoutManager() != null && scrollPosition >= 0) {
-            binding.chatsRv.post(() -> {
-                LinearLayoutManager layoutManager = (LinearLayoutManager) binding.chatsRv.getLayoutManager();
-                if (layoutManager != null && scrollPosition < combinedChats.size()) {
-                    layoutManager.scrollToPositionWithOffset(scrollPosition, 0);
+        if (layoutManager != null && shouldRestoreScrollPosition && scrollPosition >= 0) {
+            binding.chatsRv.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (!isFragmentDestroyed && binding != null && scrollPosition < combinedChats.size()) {
+                        layoutManager.scrollToPositionWithOffset(scrollPosition, 0);
+                    }
                 }
             });
         }
@@ -543,6 +584,9 @@ public class FragmentChat extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        Log.d("FragmentChat", "onDestroyView called");
+
+        isFragmentDestroyed = true;
 
         // Очищаем адаптер
         if (chatsAdapter != null) {
@@ -551,28 +595,59 @@ public class FragmentChat extends Fragment {
 
         // Очищаем слушатели списков
         if (chatsListListener != null) {
-            FirebaseDatabase.getInstance().getReference("Chats")
-                    .removeEventListener(chatsListListener);
+            try {
+                FirebaseDatabase.getInstance().getReference("Chats")
+                        .removeEventListener(chatsListListener);
+            } catch (Exception e) {
+                Log.e("FragmentChat", "Error removing chats list listener", e);
+            }
+            chatsListListener = null;
         }
+
         if (groupsListListener != null) {
-            FirebaseDatabase.getInstance().getReference("Groups")
-                    .removeEventListener(groupsListListener);
+            try {
+                FirebaseDatabase.getInstance().getReference("Groups")
+                        .removeEventListener(groupsListListener);
+            } catch (Exception e) {
+                Log.e("FragmentChat", "Error removing groups list listener", e);
+            }
+            groupsListListener = null;
         }
 
         // Очищаем слушатели отдельных чатов и групп
         for (Map.Entry<String, ValueEventListener> entry : chatListeners.entrySet()) {
-            FirebaseDatabase.getInstance().getReference("Chats").child(entry.getKey())
-                    .removeEventListener(entry.getValue());
+            try {
+                FirebaseDatabase.getInstance().getReference("Chats").child(entry.getKey())
+                        .removeEventListener(entry.getValue());
+            } catch (Exception e) {
+                Log.e("FragmentChat", "Error removing chat listener", e);
+            }
         }
+
         for (Map.Entry<String, ValueEventListener> entry : groupListeners.entrySet()) {
-            FirebaseDatabase.getInstance().getReference("Groups").child(entry.getKey())
-                    .removeEventListener(entry.getValue());
+            try {
+                FirebaseDatabase.getInstance().getReference("Groups").child(entry.getKey())
+                        .removeEventListener(entry.getValue());
+            } catch (Exception e) {
+                Log.e("FragmentChat", "Error removing group listener", e);
+            }
         }
 
         chatListeners.clear();
         groupListeners.clear();
+
+        // Очищаем списки
+        combinedChats.clear();
+
         binding = null;
 
         Log.d("FragmentChat", "Fragment destroyed and listeners cleaned up");
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        Log.d("FragmentChat", "onDestroy called");
+        isFragmentDestroyed = true;
     }
 }
