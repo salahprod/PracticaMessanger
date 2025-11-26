@@ -1,6 +1,7 @@
 package com.example.androidmessage1.chats;
 
 import android.content.Intent;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -16,15 +17,19 @@ import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 
 public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
 
     private ArrayList<Chat> chats;
     private String currentUserId;
     private OnChatClickListener listener;
+    private HashMap<String, ValueEventListener> unreadListeners;
 
     public interface OnChatClickListener {
         void onChatClick(int position);
@@ -34,12 +39,13 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         this.chats = chats;
         this.currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
         this.listener = listener;
+        this.unreadListeners = new HashMap<>();
     }
 
-    // Старый конструктор для обратной совместимости
     public ChatsAdapter(ArrayList<Chat> chats){
         this.chats = chats;
         this.currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        this.unreadListeners = new HashMap<>();
     }
 
     @NonNull
@@ -53,10 +59,8 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     public void onBindViewHolder(@NonNull ChatViewHolder holder, int position) {
         Chat chat = chats.get(position);
 
-        // Устанавливаем имя чата/группы
         holder.username_tv.setText(chat.getChat_name());
 
-        // Устанавливаем последнее сообщение
         String lastMessage = chat.getLastMessage();
         if (lastMessage != null && !lastMessage.isEmpty()) {
             holder.last_message_tv.setText(lastMessage);
@@ -66,34 +70,23 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             holder.last_message_tv.setVisibility(View.VISIBLE);
         }
 
-        // Отображаем количество непрочитанных сообщений
-        int unreadCount = chat.getUnreadCount();
-        if (unreadCount > 0) {
-            holder.message_count_badge.setVisibility(View.VISIBLE);
-            holder.message_count_badge.setText(String.valueOf(unreadCount));
-            if (unreadCount > 99) {
-                holder.message_count_badge.setText("99+");
-            }
+        // Сначала скрываем бейдж
+        holder.message_count_badge.setVisibility(View.GONE);
+        holder.last_message_tv.setTextColor(0xFF757575);
+        holder.last_message_tv.setTypeface(holder.last_message_tv.getTypeface(), android.graphics.Typeface.NORMAL);
 
-            // Подсвечиваем последнее сообщение если есть непрочитанные
-            holder.last_message_tv.setTextColor(holder.itemView.getContext().getColor(android.R.color.black));
-            holder.last_message_tv.setTypeface(holder.last_message_tv.getTypeface(), android.graphics.Typeface.BOLD);
+        // Настраиваем слушатели для непрочитанных сообщений
+        if (!chat.isGroup()) {
+            setupUnreadMessagesListener(chat.getChat_id(), holder);
         } else {
-            holder.message_count_badge.setVisibility(View.GONE);
-
-            // Обычный стиль для прочитанных сообщений
-            holder.last_message_tv.setTextColor(holder.itemView.getContext().getColor(android.R.color.darker_gray));
-            holder.last_message_tv.setTypeface(holder.last_message_tv.getTypeface(), android.graphics.Typeface.NORMAL);
+            setupGroupUnreadMessagesListener(chat.getChat_id(), holder);
         }
 
-        // Сбрасываем аватарку перед загрузкой
         holder.profile_iv.setImageResource(R.drawable.artem);
 
         if (chat.isGroup()) {
-            // Для групп загружаем аватарку группы
             loadGroupAvatar(holder, chat.getChat_id(), position);
         } else {
-            // Для обычных чатов загружаем аватарку пользователя
             loadUserAvatar(holder, chat.getOther_user_id(), position);
         }
 
@@ -101,7 +94,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             if (listener != null) {
                 listener.onChatClick(position);
             } else {
-                // Старая логика для обратной совместимости
                 if (chat.isGroup()) {
                     Intent intent = new Intent(holder.itemView.getContext(), GroupChatActivity.class);
                     intent.putExtra("groupId", chat.getChat_id());
@@ -114,7 +106,183 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                     holder.itemView.getContext().startActivity(intent);
                 }
             }
+
+            markMessagesAsRead(chat);
         });
+    }
+
+    private void setupUnreadMessagesListener(String chatId, ChatViewHolder holder) {
+        // Удаляем предыдущий слушатель если есть
+        if (unreadListeners.containsKey(chatId)) {
+            FirebaseDatabase.getInstance().getReference("Chats")
+                    .child(chatId)
+                    .child("messages")
+                    .removeEventListener(unreadListeners.get(chatId));
+        }
+
+        ValueEventListener unreadMessagesListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                int unreadCount = 0;
+
+                Log.d("ChatsAdapter", "Checking unread messages in chat: " + chatId);
+
+                if (snapshot.exists()) {
+                    for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
+                        String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
+                        Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
+
+                        if (ownerId != null &&
+                                !ownerId.equals(currentUserId) &&
+                                (isRead == null || !isRead)) {
+                            unreadCount++;
+                        }
+                    }
+                }
+
+                updateUnreadBadge(holder, unreadCount);
+                Log.d("ChatsAdapter", "Unread messages in chat " + chatId + ": " + unreadCount);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("ChatsAdapter", "Unread messages listener cancelled", error.toException());
+                updateUnreadBadge(holder, 0);
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("Chats")
+                .child(chatId)
+                .child("messages")
+                .addValueEventListener(unreadMessagesListener);
+
+        unreadListeners.put(chatId, unreadMessagesListener);
+    }
+
+    private void setupGroupUnreadMessagesListener(String groupId, ChatViewHolder holder) {
+        String listenerKey = "group_" + groupId;
+
+        if (unreadListeners.containsKey(listenerKey)) {
+            FirebaseDatabase.getInstance().getReference("Groups")
+                    .child(groupId)
+                    .child("messages")
+                    .removeEventListener(unreadListeners.get(listenerKey));
+        }
+
+        ValueEventListener groupUnreadListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                int unreadCount = 0;
+
+                Log.d("ChatsAdapter", "Checking unread messages in group: " + groupId);
+
+                if (snapshot.exists()) {
+                    for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
+                        String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
+                        Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
+
+                        if (ownerId != null &&
+                                !ownerId.equals(currentUserId) &&
+                                (isRead == null || !isRead)) {
+                            unreadCount++;
+                        }
+                    }
+                }
+
+                updateUnreadBadge(holder, unreadCount);
+                Log.d("ChatsAdapter", "Unread messages in group " + groupId + ": " + unreadCount);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("ChatsAdapter", "Group unread messages listener cancelled", error.toException());
+                updateUnreadBadge(holder, 0);
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("Groups")
+                .child(groupId)
+                .child("messages")
+                .addValueEventListener(groupUnreadListener);
+
+        unreadListeners.put(listenerKey, groupUnreadListener);
+    }
+
+    private void updateUnreadBadge(ChatViewHolder holder, int unreadCount) {
+        try {
+            if (unreadCount > 0) {
+                holder.message_count_badge.setVisibility(View.VISIBLE);
+                holder.message_count_badge.setText(unreadCount > 99 ? "99+" : String.valueOf(unreadCount));
+
+                // Черный цвет и жирный шрифт для непрочитанных
+                holder.last_message_tv.setTextColor(0xFF000000);
+                holder.last_message_tv.setTypeface(holder.last_message_tv.getTypeface(), android.graphics.Typeface.BOLD);
+            } else {
+                holder.message_count_badge.setVisibility(View.GONE);
+
+                // Серый цвет и обычный шрифт для прочитанных
+                holder.last_message_tv.setTextColor(0xFF757575);
+                holder.last_message_tv.setTypeface(holder.last_message_tv.getTypeface(), android.graphics.Typeface.NORMAL);
+            }
+        } catch (Exception e) {
+            Log.e("ChatsAdapter", "Error updating badge", e);
+        }
+    }
+
+    private void markMessagesAsRead(Chat chat) {
+        if (chat.isGroup()) {
+            markGroupMessagesAsRead(chat.getChat_id());
+        } else {
+            markChatMessagesAsRead(chat.getChat_id());
+        }
+    }
+
+    private void markChatMessagesAsRead(String chatId) {
+        FirebaseDatabase.getInstance().getReference("Chats")
+                .child(chatId)
+                .child("messages")
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
+                            String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
+                            Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
+
+                            if (ownerId != null && !ownerId.equals(currentUserId) && (isRead == null || !isRead)) {
+                                messageSnapshot.getRef().child("isRead").setValue(true);
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Log.e("ChatsAdapter", "Error marking messages as read", error.toException());
+                    }
+                });
+    }
+
+    private void markGroupMessagesAsRead(String groupId) {
+        FirebaseDatabase.getInstance().getReference("Groups")
+                .child(groupId)
+                .child("messages")
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
+                            String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
+                            Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
+
+                            if (ownerId != null && !ownerId.equals(currentUserId) && (isRead == null || !isRead)) {
+                                messageSnapshot.getRef().child("isRead").setValue(true);
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Log.e("ChatsAdapter", "Error marking group messages as read", error.toException());
+                    }
+                });
     }
 
     private void loadUserAvatar(ChatViewHolder holder, String userId, int position) {
@@ -192,10 +360,14 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         return chats.size();
     }
 
-    // Метод для обновления списка чатов
-    public void updateChats(ArrayList<Chat> newChats) {
-        this.chats.clear();
-        this.chats.addAll(newChats);
-        notifyDataSetChanged();
+    public void cleanup() {
+        for (ValueEventListener listener : unreadListeners.values()) {
+            try {
+                FirebaseDatabase.getInstance().getReference().removeEventListener(listener);
+            } catch (Exception e) {
+                Log.e("ChatsAdapter", "Error removing listener", e);
+            }
+        }
+        unreadListeners.clear();
     }
 }

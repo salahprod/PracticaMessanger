@@ -59,6 +59,9 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
+        // Обновляем онлайн статус текущего пользователя
+        updateUserOnlineStatus();
+
         initializeViews();
 
         if (otherUserId == null) {
@@ -72,7 +75,40 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // УДАЛЕНО: методы onStart, onStop, onResume, onPause для управления статусом
+    // Метод для обновления онлайн статуса
+    private void updateUserOnlineStatus() {
+        if (currentUserId != null) {
+            // Устанавливаем текущего пользователя онлайн
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("isOnline")
+                    .setValue(true);
+
+            // Устанавливаем время последней активности
+            long currentTime = System.currentTimeMillis();
+            SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
+            SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy", Locale.getDefault());
+
+            String currentTimeStr = timeFormat.format(new Date(currentTime));
+            String currentDateStr = dateFormat.format(new Date(currentTime));
+
+            HashMap<String, Object> updateData = new HashMap<>();
+            updateData.put("lastOnline", currentTime);
+            updateData.put("lastOnlineTime", currentTimeStr);
+            updateData.put("lastOnlineDate", currentDateStr);
+
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .updateChildren(updateData);
+
+            // Устанавливаем слушатель для автоматического установки офлайн статуса при выходе
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("isOnline")
+                    .onDisconnect()
+                    .setValue(false);
+        }
+    }
 
     private void initializeViews() {
         binding.messagesRv.setLayoutManager(new LinearLayoutManager(this));
@@ -86,10 +122,24 @@ public class ChatActivity extends AppCompatActivity {
             }
         });
 
-        binding.sendMessageBtn.setOnClickListener(v -> sendMessage());
-        binding.exitBtn.setOnClickListener(v -> exitToMainActivity());
-        binding.sendVideoBtn.setOnClickListener(v ->
-                Toast.makeText(this, "Video feature coming soon", Toast.LENGTH_SHORT).show());
+        binding.sendMessageBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                sendMessage();
+            }
+        });
+        binding.exitBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                exitToMainActivity();
+            }
+        });
+        binding.sendVideoBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Toast.makeText(ChatActivity.this, "Video feature coming soon", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     private void startUserStatusTracking() {
@@ -164,18 +214,21 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void updateUserStatusDisplay(Boolean isOnline, Long lastOnline, String lastOnlineTime, String lastOnlineDate) {
-        runOnUiThread(() -> {
-            if (isOnline != null && isOnline) {
-                binding.userStatus.setText("online");
-                binding.userStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
-            } else {
-                if (lastOnline != null) {
-                    String statusText = formatLastSeen(lastOnline, lastOnlineTime, lastOnlineDate);
-                    binding.userStatus.setText(statusText);
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (isOnline != null && isOnline) {
+                    binding.userStatus.setText("online");
+                    binding.userStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
                 } else {
-                    binding.userStatus.setText("offline");
+                    if (lastOnline != null) {
+                        String statusText = formatLastSeen(lastOnline, lastOnlineTime, lastOnlineDate);
+                        binding.userStatus.setText(statusText);
+                    } else {
+                        binding.userStatus.setText("offline");
+                    }
+                    binding.userStatus.setTextColor(getResources().getColor(android.R.color.darker_gray));
                 }
-                binding.userStatus.setTextColor(getResources().getColor(android.R.color.darker_gray));
             }
         });
     }
@@ -221,6 +274,7 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
+    // ВАЖНО: Метод для отметки всех сообщений как прочитанных
     private void markAllMessagesAsRead() {
         if (chatId == null || otherUserId == null) {
             Log.e("ChatActivity", "chatId or otherUserId is null");
@@ -246,6 +300,7 @@ public class ChatActivity extends AppCompatActivity {
                             String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
                             Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
 
+                            // Отмечаем как прочитанные сообщения от другого пользователя, которые еще не прочитаны
                             if (messageId != null && ownerId != null &&
                                     ownerId.equals(currentOtherUserId) &&
                                     (isRead == null || !isRead)) {
@@ -277,11 +332,14 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void setupKeyboardBehavior() {
-        binding.messageEt.postDelayed(() -> {
-            binding.messageEt.requestFocus();
-            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (imm != null) {
-                imm.showSoftInput(binding.messageEt, InputMethodManager.SHOW_IMPLICIT);
+        binding.messageEt.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                binding.messageEt.requestFocus();
+                InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.showSoftInput(binding.messageEt, InputMethodManager.SHOW_IMPLICIT);
+                }
             }
         }, 200);
 
@@ -295,7 +353,12 @@ public class ChatActivity extends AppCompatActivity {
                     previousHeight = heightDiff;
 
                     if (heightDiff > 400) {
-                        binding.messagesRv.postDelayed(() -> scrollToBottom(), 100);
+                        binding.messagesRv.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                scrollToBottom();
+                            }
+                        }, 100);
                     }
                 }
             }
@@ -303,9 +366,17 @@ public class ChatActivity extends AppCompatActivity {
 
         binding.getRoot().getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
 
-        binding.messageEt.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) {
-                binding.messagesRv.postDelayed(() -> scrollToBottom(), 200);
+        binding.messageEt.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                if (hasFocus) {
+                    binding.messagesRv.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            scrollToBottom();
+                        }
+                    }, 200);
+                }
             }
         });
     }
@@ -316,6 +387,7 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
+    // ВАЖНО: Исправленный метод отправки сообщения
     private void sendMessage() {
         String messageText = binding.messageEt.getText().toString().trim();
         if (messageText.isEmpty()) {
@@ -342,12 +414,14 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
+        // ВАЖНО: При отправке сообщения устанавливаем isRead = false для получателя
         HashMap<String, Object> messageInfo = new HashMap<>();
+        messageInfo.put("id", messageKey);
         messageInfo.put("text", messageText);
         messageInfo.put("ownerId", currentUserId);
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
-        messageInfo.put("isRead", true);
+        messageInfo.put("isRead", false); // ВАЖНО: для получателя сообщение непрочитанное
 
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
@@ -358,6 +432,7 @@ public class ChatActivity extends AppCompatActivity {
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
                         updateLastMessageInChat(messageText, System.currentTimeMillis());
+                        Log.d("ChatActivity", "Message sent with isRead = false");
                     } else {
                         Toast.makeText(ChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
                     }
@@ -529,7 +604,14 @@ public class ChatActivity extends AppCompatActivity {
                 .child("messages")
                 .child(messageId)
                 .child("isRead")
-                .setValue(true);
+                .setValue(true)
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        Log.d("ChatActivity", "Message marked as read: " + messageId);
+                    } else {
+                        Log.e("ChatActivity", "Failed to mark message as read: " + messageId);
+                    }
+                });
     }
 
     @Override
@@ -538,11 +620,21 @@ public class ChatActivity extends AppCompatActivity {
         if (chatId != null && otherUserId != null) {
             markAllMessagesAsRead();
         }
+        // Обновляем онлайн статус при возвращении в приложение
+        updateUserOnlineStatus();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        if (chatId != null && otherUserId != null) {
+            markAllMessagesAsRead();
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
         if (chatId != null && otherUserId != null) {
             markAllMessagesAsRead();
         }
@@ -567,6 +659,15 @@ public class ChatActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        // Очищаем onDisconnect при выходе
+        if (currentUserId != null) {
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("isOnline")
+                    .onDisconnect()
+                    .cancel();
+        }
 
         // Очищаем слушатели
         if (messagesListener != null && chatId != null) {

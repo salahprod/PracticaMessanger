@@ -35,7 +35,6 @@ import java.util.Map;
 public class FragmentChat extends Fragment {
     private FragmentChatsBinding binding;
     private ChatsAdapter chatsAdapter;
-    private ArrayList<Chat> chats = new ArrayList<>();
     private ArrayList<Chat> combinedChats = new ArrayList<>();
     private Map<String, ValueEventListener> chatListeners = new HashMap<>();
     private Map<String, ValueEventListener> groupListeners = new HashMap<>();
@@ -199,9 +198,6 @@ public class FragmentChat extends Fragment {
         }
 
         sortAndUpdateChats();
-
-        Log.d("FragmentChat", "Group updated: " + newGroup.getGroupName() +
-                " | Last message: " + newGroup.getLastMessage());
     }
 
     private Chat createGroupChat(Group group) {
@@ -214,7 +210,7 @@ public class FragmentChat extends Fragment {
         groupChat.setLastMessage(formatGroupLastMessage(group));
         groupChat.setLastMessageTime(String.valueOf(group.getLastMessageTime()));
         groupChat.setLastMessageTimestamp(group.getLastMessageTime());
-        groupChat.setUnreadCount(group.getUnreadCount());
+        groupChat.setUnreadCount(0);
         groupChat.setGroup(true);
         return groupChat;
     }
@@ -223,7 +219,6 @@ public class FragmentChat extends Fragment {
         groupChat.setLastMessage(formatGroupLastMessage(group));
         groupChat.setLastMessageTime(String.valueOf(group.getLastMessageTime()));
         groupChat.setLastMessageTimestamp(group.getLastMessageTime());
-        groupChat.setUnreadCount(group.getUnreadCount());
     }
 
     private String formatGroupLastMessage(Group group) {
@@ -232,7 +227,6 @@ public class FragmentChat extends Fragment {
 
         if (lastMessage != null && !lastMessage.isEmpty() && !lastMessage.equals("Group created")) {
             if (lastSender != null && !lastSender.equals("system") && !lastSender.equals("System")) {
-                // Если последнее сообщение от текущего пользователя, показываем "Вы:"
                 if (isCurrentUser(lastSender)) {
                     return "Вы: " + lastMessage;
                 } else {
@@ -247,7 +241,6 @@ public class FragmentChat extends Fragment {
     }
 
     private boolean isCurrentUser(String senderName) {
-        // Простая проверка - если отправитель содержит часть нашего email
         try {
             String currentUserEmail = FirebaseAuth.getInstance().getCurrentUser().getEmail();
             if (currentUserEmail != null && senderName != null) {
@@ -265,7 +258,9 @@ public class FragmentChat extends Fragment {
             Chat chat = combinedChats.get(i);
             if (chat.isGroup() && chat.getChat_id().equals(groupId)) {
                 combinedChats.remove(i);
-                chatsAdapter.notifyDataSetChanged();
+                if (chatsAdapter != null) {
+                    chatsAdapter.notifyItemRemoved(i);
+                }
                 break;
             }
         }
@@ -283,7 +278,7 @@ public class FragmentChat extends Fragment {
                         lastMessageTime = 0L;
                     }
 
-                    loadUserInfoAndCountUnread(chatId, otherUserId, lastMessage, lastMessageTime);
+                    loadUserInfo(chatId, otherUserId, lastMessage, lastMessageTime);
 
                 } catch (Exception e) {
                     Log.e("FragmentChat", "Error processing chat data", e);
@@ -301,7 +296,7 @@ public class FragmentChat extends Fragment {
                 .addValueEventListener(chatListener);
     }
 
-    private void loadUserInfoAndCountUnread(String chatId, String otherUserId, String lastMessage, long lastMessageTime) {
+    private void loadUserInfo(String chatId, String otherUserId, String lastMessage, long lastMessageTime) {
         FirebaseDatabase.getInstance().getReference("Users").child(otherUserId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
@@ -324,86 +319,19 @@ public class FragmentChat extends Fragment {
                             }
                         }
 
-                        countUnreadMessages(chatId, otherUserId, chatName, lastMessage, lastMessageTime);
+                        Chat chat = new Chat(chatId, otherUserId, currentUserId, chatName);
+                        chat.setLastMessage(lastMessage != null ? lastMessage : "");
+                        chat.setLastMessageTime(String.valueOf(lastMessageTime));
+                        chat.setLastMessageTimestamp(lastMessageTime);
+                        chat.setUnreadCount(0);
+                        chat.setGroup(false);
+
+                        updateOrAddChat(chat);
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
                         Log.e("FragmentChat", "Failed to load user info", error.toException());
-                        countUnreadMessages(chatId, otherUserId, "Unknown User", lastMessage, lastMessageTime);
-                    }
-                });
-    }
-
-    private void countUnreadMessages(String chatId, String otherUserId, String chatName, String lastMessage, long lastMessageTime) {
-        FirebaseDatabase.getInstance().getReference("Chats").child(chatId).child("messages")
-                .addListenerForSingleValueEvent(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(@NonNull DataSnapshot messagesSnapshot) {
-                        try {
-                            int unreadCount = 0;
-                            String actualLastMessage = lastMessage;
-                            long actualLastMessageTime = lastMessageTime;
-
-                            // Определяем, кто написал последнее сообщение
-                            String lastMessageOwner = null;
-                            long latestTimestamp = 0;
-
-                            if (messagesSnapshot.exists()) {
-                                for (DataSnapshot messageSnapshot : messagesSnapshot.getChildren()) {
-                                    Long timestamp = messageSnapshot.child("timestamp").getValue(Long.class);
-                                    String text = messageSnapshot.child("text").getValue(String.class);
-                                    String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
-
-                                    if (timestamp != null && text != null && ownerId != null) {
-                                        if (timestamp > latestTimestamp) {
-                                            latestTimestamp = timestamp;
-                                            actualLastMessage = text;
-                                            lastMessageOwner = ownerId;
-                                        }
-                                    }
-                                }
-
-                                if (!actualLastMessage.isEmpty()) {
-                                    actualLastMessageTime = latestTimestamp;
-                                }
-                            }
-
-                            // Форматируем последнее сообщение для отображения в списке чатов
-                            String formattedLastMessage = actualLastMessage;
-                            if (lastMessageOwner != null && lastMessageOwner.equals(currentUserId)) {
-                                formattedLastMessage = "Вы: " + actualLastMessage;
-                            }
-                            // Для сообщений от других пользователей оставляем как есть
-
-                            // Считаем непрочитанные сообщения
-                            for (DataSnapshot messageSnapshot : messagesSnapshot.getChildren()) {
-                                String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
-                                Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
-
-                                if (ownerId != null && ownerId.equals(otherUserId)) {
-                                    if (isRead == null || !isRead) {
-                                        unreadCount++;
-                                    }
-                                }
-                            }
-
-                            Chat chat = new Chat(chatId, otherUserId, currentUserId, chatName);
-                            chat.setLastMessage(formattedLastMessage != null ? formattedLastMessage : "");
-                            chat.setLastMessageTime(String.valueOf(actualLastMessageTime));
-                            chat.setLastMessageTimestamp(actualLastMessageTime);
-                            chat.setUnreadCount(unreadCount);
-                            chat.setGroup(false);
-
-                            updateOrAddChat(chat);
-                        } catch (Exception e) {
-                            Log.e("FragmentChat", "Error counting messages", e);
-                        }
-                    }
-
-                    @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        Log.e("FragmentChat", "Failed to count messages", error.toException());
                     }
                 });
     }
@@ -424,10 +352,6 @@ public class FragmentChat extends Fragment {
         }
 
         sortAndUpdateChats();
-
-        Log.d("FragmentChat", "Chat updated: " + newChat.getChat_name() +
-                " | Unread: " + newChat.getUnreadCount() +
-                " | Last message: " + newChat.getLastMessage());
     }
 
     private void sortAndUpdateChats() {
@@ -460,13 +384,17 @@ public class FragmentChat extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        Log.d("FragmentChat", "Fragment resumed - refreshing chats and groups");
-        loadGroups();
+        Log.d("FragmentChat", "Fragment resumed");
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+
+        if (chatsAdapter != null) {
+            chatsAdapter.cleanup();
+        }
+
         for (Map.Entry<String, ValueEventListener> entry : chatListeners.entrySet()) {
             FirebaseDatabase.getInstance().getReference("Chats").child(entry.getKey())
                     .removeEventListener(entry.getValue());
