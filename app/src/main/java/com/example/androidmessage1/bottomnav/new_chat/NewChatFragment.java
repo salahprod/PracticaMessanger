@@ -49,6 +49,7 @@ public class NewChatFragment extends Fragment {
     private ArrayList<User> searchResults = new ArrayList<>();
     private boolean isKeyboardForcedHidden = false;
     private String currentUserId;
+    private boolean isSearchActive = false; // Флаг для отслеживания активного поиска
 
     // HashMap для хранения статусов пользователей
     private HashMap<String, UserStatus> userStatusMap = new HashMap<>();
@@ -110,12 +111,14 @@ public class NewChatFragment extends Fragment {
     public void onResume() {
         super.onResume();
         Log.d("NewChatFragment", "Fragment resumed");
+        isSearchActive = false; // Сбрасываем флаг поиска при возобновлении
     }
 
     @Override
     public void onPause() {
         super.onPause();
         hideKeyboardDelayed();
+        isSearchActive = false; // Сбрасываем флаг поиска при паузе
     }
 
     @Override
@@ -224,6 +227,7 @@ public class NewChatFragment extends Fragment {
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 String query = s.toString().trim();
+                isSearchActive = !query.isEmpty(); // Устанавливаем флаг поиска
                 performSearch(query);
 
                 if (s.length() > 0) {
@@ -233,6 +237,7 @@ public class NewChatFragment extends Fragment {
                     binding.searchBtn.setVisibility(View.GONE);
                     binding.emptyStateText.setVisibility(View.VISIBLE);
                     binding.emptyStateText.setText("Enter username or group name to search");
+                    isSearchActive = false; // Сбрасываем флаг при очистке поиска
                 }
             }
 
@@ -247,6 +252,7 @@ public class NewChatFragment extends Fragment {
             binding.emptyStateText.setVisibility(View.VISIBLE);
             binding.emptyStateText.setText("Enter username or group name to search");
             searchResults.clear();
+            isSearchActive = false; // Сбрасываем флаг поиска
             updateAdapter();
         });
 
@@ -292,7 +298,7 @@ public class NewChatFragment extends Fragment {
                 // Создаем копию пользователя для отображения
                 User displayUser = new User(displayName, user.getProfileImage());
 
-                // Применяем кастомное фото если есть
+                // Применяем кастомное фото если есть - ОНО ИМЕЕТ ПРИОРИТЕТ
                 if (customSettings != null && customSettings.customImage != null && !customSettings.customImage.isEmpty()) {
                     displayUser.setProfileImage(customSettings.customImage);
                 }
@@ -467,6 +473,12 @@ public class NewChatFragment extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (binding == null) return;
 
+                // Если активен поиск, не обновляем основной список
+                if (isSearchActive) {
+                    Log.d("NewChatFragment", "Search active, skipping users list update");
+                    return;
+                }
+
                 usersList.clear();
                 userIdsList.clear();
                 userStatusMap.clear();
@@ -564,6 +576,7 @@ public class NewChatFragment extends Fragment {
                     String customName = snapshot.child("customName").getValue(String.class);
                     String customImage = snapshot.child("customImage").getValue(String.class);
 
+                    // Сохраняем кастомные настройки
                     customSettingsMap.put(userId, new CustomSettings(customName, customImage));
 
                     // Обновляем UI если этот пользователь в результатах поиска
@@ -735,6 +748,12 @@ public class NewChatFragment extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (binding == null) return;
 
+                // Если активен поиск, не обновляем статусы в основном списке
+                if (isSearchActive) {
+                    Log.d("NewChatFragment", "Search active, skipping status updates");
+                    return;
+                }
+
                 for (DataSnapshot userSnapshot : snapshot.getChildren()) {
                     String userId = userSnapshot.getKey();
                     if (userId == null) continue;
@@ -771,7 +790,8 @@ public class NewChatFragment extends Fragment {
                     }
                 }
 
-                if (binding != null && !binding.searchEt.getText().toString().trim().isEmpty()) {
+                // Обновляем поиск только если он активен
+                if (binding != null && isSearchActive && !binding.searchEt.getText().toString().trim().isEmpty()) {
                     performSearch(binding.searchEt.getText().toString().trim());
                 }
             }
@@ -794,6 +814,12 @@ public class NewChatFragment extends Fragment {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (binding == null) return;
+
+                // Если активен поиск, не обновляем список групп
+                if (isSearchActive) {
+                    Log.d("NewChatFragment", "Search active, skipping groups update");
+                    return;
+                }
 
                 groupsList.clear();
                 groupIdsList.clear();
@@ -825,6 +851,12 @@ public class NewChatFragment extends Fragment {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         if (binding == null) return;
+
+                        // Если активен поиск, не добавляем новые группы
+                        if (isSearchActive) {
+                            Log.d("NewChatFragment", "Search active, skipping group details");
+                            return;
+                        }
 
                         if (snapshot.exists()) {
                             Group group = snapshot.getValue(Group.class);

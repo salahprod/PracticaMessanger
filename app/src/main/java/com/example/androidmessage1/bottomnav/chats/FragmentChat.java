@@ -381,7 +381,8 @@ public class FragmentChat extends Fragment {
                         lastMessageTime = 0L;
                     }
 
-                    loadUserInfo(chatId, otherUserId, lastMessage, lastMessageTime);
+                    // Сначала загружаем кастомные настройки
+                    loadCustomSettings(otherUserId, chatId, lastMessage, lastMessageTime);
 
                 } catch (Exception e) {
                     Log.e("FragmentChat", "Error processing chat data", e);
@@ -400,9 +401,57 @@ public class FragmentChat extends Fragment {
                 .addValueEventListener(chatListener);
     }
 
-    private void loadUserInfo(String chatId, String otherUserId, String lastMessage, long lastMessageTime) {
+    // ИСПРАВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек из правильного пути
+    private void loadCustomSettings(String otherUserId, String chatId, String lastMessage, long lastMessageTime) {
         if (isFragmentDestroyed) return;
 
+        // Удаляем предыдущий слушатель если есть
+        if (customSettingsListeners.containsKey(otherUserId)) {
+            FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                    .child(currentUserId)
+                    .child("chatContacts")
+                    .child(otherUserId)
+                    .removeEventListener(customSettingsListeners.get(otherUserId));
+        }
+
+        ValueEventListener customSettingsListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (isFragmentDestroyed || binding == null) return;
+
+                // Загружаем оригинальные данные пользователя только если нет кастомной аватарки
+                if (snapshot.exists()) {
+                    String customName = snapshot.child("customName").getValue(String.class);
+                    String customImage = snapshot.child("customImage").getValue(String.class);
+
+                    // Если есть кастомная аватарка, используем её и не загружаем оригинальные данные
+                    if (customImage != null && !customImage.isEmpty()) {
+                        createChatWithCustomData(chatId, otherUserId, lastMessage, lastMessageTime, customName, customImage);
+                        return;
+                    }
+                }
+
+                // Если кастомной аватарки нет, загружаем оригинальные данные
+                loadOriginalUserData(chatId, otherUserId, lastMessage, lastMessageTime);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("FragmentChat", "Failed to load custom settings for user: " + otherUserId, error.toException());
+                // При ошибке загружаем оригинальные данные
+                loadOriginalUserData(chatId, otherUserId, lastMessage, lastMessageTime);
+            }
+        };
+
+        customSettingsListeners.put(otherUserId, customSettingsListener);
+        FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                .child(currentUserId)
+                .child("chatContacts")
+                .child(otherUserId)
+                .addValueEventListener(customSettingsListener);
+    }
+
+    private void loadOriginalUserData(String chatId, String otherUserId, String lastMessage, long lastMessageTime) {
         FirebaseDatabase.getInstance().getReference("Users").child(otherUserId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
@@ -439,8 +488,6 @@ public class FragmentChat extends Fragment {
                         chat.setProfileImage(profileImage);
 
                         updateOrAddChat(chat);
-                        // Загружаем кастомные настройки из правильного пути
-                        loadCustomSettings(otherUserId, chatId);
                     }
 
                     @Override
@@ -451,72 +498,19 @@ public class FragmentChat extends Fragment {
                 });
     }
 
-    // ИСПРАВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек из правильного пути
-    private void loadCustomSettings(String otherUserId, String chatId) {
-        if (isFragmentDestroyed) return;
+    private void createChatWithCustomData(String chatId, String otherUserId, String lastMessage, long lastMessageTime, String customName, String customImage) {
+        String chatName = customName != null && !customName.isEmpty() ? customName : "User";
+        String profileImage = customImage != null && !customImage.isEmpty() ? customImage : "";
 
-        // Удаляем предыдущий слушатель если есть
-        if (customSettingsListeners.containsKey(otherUserId)) {
-            FirebaseDatabase.getInstance().getReference("UserCustomizations")
-                    .child(currentUserId)
-                    .child("chatContacts")
-                    .child(otherUserId)
-                    .removeEventListener(customSettingsListeners.get(otherUserId));
-        }
+        Chat chat = new Chat(chatId, otherUserId, currentUserId, chatName);
+        chat.setLastMessage(lastMessage != null ? lastMessage : "");
+        chat.setLastMessageTime(String.valueOf(lastMessageTime));
+        chat.setLastMessageTimestamp(lastMessageTime);
+        chat.setUnreadCount(0);
+        chat.setGroup(false);
+        chat.setProfileImage(profileImage);
 
-        ValueEventListener customSettingsListener = new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                if (isFragmentDestroyed || binding == null) return;
-
-                for (int i = 0; i < combinedChats.size(); i++) {
-                    Chat chat = combinedChats.get(i);
-                    if (chat.getChat_id().equals(chatId) && !chat.isGroup()) {
-
-                        boolean needsUpdate = false;
-
-                        if (snapshot.exists()) {
-                            String customName = snapshot.child("customName").getValue(String.class);
-                            String customImage = snapshot.child("customImage").getValue(String.class);
-
-                            // Применяем кастомное имя если есть
-                            if (customName != null && !customName.isEmpty()) {
-                                if (!customName.equals(chat.getChat_name())) {
-                                    chat.setChat_name(customName);
-                                    needsUpdate = true;
-                                }
-                            }
-
-                            // Применяем кастомное фото если есть
-                            if (customImage != null && !customImage.isEmpty()) {
-                                if (!customImage.equals(chat.getProfileImage())) {
-                                    chat.setProfileImage(customImage);
-                                    needsUpdate = true;
-                                }
-                            }
-                        }
-
-                        // Обновляем UI только если есть изменения
-                        if (needsUpdate && chatsAdapter != null) {
-                            chatsAdapter.notifyItemChanged(i);
-                        }
-                        break;
-                    }
-                }
-            }
-
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {
-                Log.e("FragmentChat", "Failed to load custom settings for user: " + otherUserId, error.toException());
-            }
-        };
-
-        customSettingsListeners.put(otherUserId, customSettingsListener);
-        FirebaseDatabase.getInstance().getReference("UserCustomizations")
-                .child(currentUserId)
-                .child("chatContacts")
-                .child(otherUserId)
-                .addValueEventListener(customSettingsListener);
+        updateOrAddChat(chat);
     }
 
     private void updateOrAddChat(Chat newChat) {
