@@ -39,12 +39,10 @@ public class FragmentChat extends Fragment {
     private ArrayList<Chat> combinedChats = new ArrayList<>();
     private Map<String, ValueEventListener> chatListeners = new HashMap<>();
     private Map<String, ValueEventListener> groupListeners = new HashMap<>();
+    private Map<String, ValueEventListener> customSettingsListeners = new HashMap<>();
     private ValueEventListener chatsListListener;
     private ValueEventListener groupsListListener;
     private String currentUserId;
-    private int scrollPosition = 0;
-    private boolean shouldRestoreScrollPosition = false;
-    private LinearLayoutManager layoutManager;
     private boolean isFragmentDestroyed = false;
 
     @Nullable
@@ -70,30 +68,25 @@ public class FragmentChat extends Fragment {
     }
 
     private void setupRecyclerView() {
-        layoutManager = new LinearLayoutManager(getContext());
+        LinearLayoutManager layoutManager = new LinearLayoutManager(getContext());
         binding.chatsRv.setLayoutManager(layoutManager);
 
         DividerItemDecoration dividerItemDecoration = new DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL);
         binding.chatsRv.addItemDecoration(dividerItemDecoration);
 
-        // Сохраняем позицию прокрутки при скролле
-        binding.chatsRv.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                super.onScrolled(recyclerView, dx, dy);
-                if (layoutManager != null) {
-                    scrollPosition = layoutManager.findFirstVisibleItemPosition();
-                    shouldRestoreScrollPosition = true;
-                }
-            }
-        });
-
         chatsAdapter = new ChatsAdapter(combinedChats, new ChatsAdapter.OnChatClickListener() {
             @Override
             public void onChatClick(int position) {
-                if (position < 0 || position >= combinedChats.size()) return;
+                Log.d("FragmentChat", "Chat clicked at position: " + position);
+
+                if (position < 0 || position >= combinedChats.size()) {
+                    Log.e("FragmentChat", "Invalid chat position: " + position);
+                    return;
+                }
 
                 Chat chat = combinedChats.get(position);
+                Log.d("FragmentChat", "Opening chat: " + chat.getChat_name() + ", ID: " + chat.getChat_id());
+
                 if (chat.isGroup()) {
                     openGroupChat(chat.getChat_id(), chat.getChat_name());
                 } else {
@@ -101,18 +94,20 @@ public class FragmentChat extends Fragment {
                 }
             }
         });
+
         binding.chatsRv.setAdapter(chatsAdapter);
+        Log.d("FragmentChat", "RecyclerView setup completed");
     }
 
     private void setupCreateGroupButton() {
         binding.createGroupBtn.setOnClickListener(v -> {
+            Log.d("FragmentChat", "Create group button clicked");
             Intent intent = new Intent(getContext(), CreateGroupActivity.class);
             startActivity(intent);
         });
     }
 
     private void loadChats() {
-        // Очищаем предыдущий слушатель если есть
         if (chatsListListener != null) {
             FirebaseDatabase.getInstance().getReference("Chats")
                     .removeEventListener(chatsListListener);
@@ -124,9 +119,6 @@ public class FragmentChat extends Fragment {
                 if (isFragmentDestroyed || binding == null) return;
 
                 Log.d("FragmentChat", "Chats data changed, total chats: " + snapshot.getChildrenCount());
-
-                // Сохраняем текущую позицию прокрутки
-                saveScrollPosition();
 
                 // Очищаем старые слушатели чатов
                 for (ValueEventListener listener : chatListeners.values()) {
@@ -175,17 +167,13 @@ public class FragmentChat extends Fragment {
                 // Обновляем список
                 combinedChats.clear();
                 combinedChats.addAll(newChats);
-                sortChatsSilently();
-
-                // Восстанавливаем позицию прокрутки
-                restoreScrollPosition();
+                sortChats();
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 if (isFragmentDestroyed) return;
                 Log.e("FragmentChat", "Failed to load chats", error.toException());
-                Toast.makeText(getContext(), "Failed to load chats", Toast.LENGTH_SHORT).show();
             }
         };
 
@@ -194,7 +182,6 @@ public class FragmentChat extends Fragment {
     }
 
     private void loadGroups() {
-        // Очищаем предыдущий слушатель если есть
         if (groupsListListener != null) {
             FirebaseDatabase.getInstance().getReference("Groups")
                     .removeEventListener(groupsListListener);
@@ -206,9 +193,6 @@ public class FragmentChat extends Fragment {
                 if (isFragmentDestroyed || binding == null) return;
 
                 Log.d("FragmentChat", "Groups data changed, total groups: " + snapshot.getChildrenCount());
-
-                // Сохраняем текущую позицию прокрутки
-                saveScrollPosition();
 
                 // Очищаем старые слушатели групп
                 for (ValueEventListener listener : groupListeners.values()) {
@@ -248,10 +232,7 @@ public class FragmentChat extends Fragment {
                 // Обновляем список
                 combinedChats.clear();
                 combinedChats.addAll(newChats);
-                sortChatsSilently();
-
-                // Восстанавливаем позицию прокрутки
-                restoreScrollPosition();
+                sortChats();
             }
 
             @Override
@@ -276,19 +257,19 @@ public class FragmentChat extends Fragment {
                 try {
                     Group group = groupSnapshot.getValue(Group.class);
                     if (group != null && group.getMembers() != null && group.getMembers().contains(currentUserId)) {
-                        updateOrAddGroupSilently(group);
+                        updateOrAddGroup(group);
                     } else {
-                        removeGroupSilently(groupId);
+                        removeGroup(groupId);
                     }
                 } catch (Exception e) {
-                    Log.e("FragmentChat", "Error processing group data for group: " + groupId, e);
+                    Log.e("FragmentChat", "Error processing group data", e);
                 }
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 if (isFragmentDestroyed) return;
-                Log.e("FragmentChat", "Group listener cancelled for group: " + groupId, error.toException());
+                Log.e("FragmentChat", "Group listener cancelled", error.toException());
             }
         };
 
@@ -297,13 +278,12 @@ public class FragmentChat extends Fragment {
                 .addValueEventListener(groupListener);
     }
 
-    private void updateOrAddGroupSilently(Group newGroup) {
+    private void updateOrAddGroup(Group newGroup) {
         if (isFragmentDestroyed) return;
 
         String groupId = newGroup.getGroupId();
         int existingIndex = -1;
 
-        // Ищем существующую группу
         for (int i = 0; i < combinedChats.size(); i++) {
             Chat chat = combinedChats.get(i);
             if (chat.isGroup() && chat.getChat_id().equals(groupId)) {
@@ -315,23 +295,11 @@ public class FragmentChat extends Fragment {
         Chat groupChat = createGroupChat(newGroup);
 
         if (existingIndex != -1) {
-            // Обновляем существующую группу
-            Chat existingChat = combinedChats.get(existingIndex);
-            if (needsUpdate(existingChat, groupChat)) {
-                combinedChats.set(existingIndex, groupChat);
-                sortChatsSilently();
-            }
+            combinedChats.set(existingIndex, groupChat);
         } else {
-            // Добавляем новую группу
             combinedChats.add(groupChat);
-            sortChatsSilently();
         }
-    }
-
-    private boolean needsUpdate(Chat oldChat, Chat newChat) {
-        return !oldChat.getLastMessage().equals(newChat.getLastMessage()) ||
-                oldChat.getLastMessageTimestamp() != newChat.getLastMessageTimestamp() ||
-                !oldChat.getChat_name().equals(newChat.getChat_name());
+        sortChats();
     }
 
     private Chat createGroupChat(Group group) {
@@ -346,6 +314,7 @@ public class FragmentChat extends Fragment {
         groupChat.setLastMessageTimestamp(group.getLastMessageTime());
         groupChat.setUnreadCount(0);
         groupChat.setGroup(true);
+        groupChat.setProfileImage(group.getGroupImage() != null ? group.getGroupImage() : "");
         return groupChat;
     }
 
@@ -381,7 +350,7 @@ public class FragmentChat extends Fragment {
         return false;
     }
 
-    private void removeGroupSilently(String groupId) {
+    private void removeGroup(String groupId) {
         if (isFragmentDestroyed) return;
 
         for (int i = 0; i < combinedChats.size(); i++) {
@@ -415,14 +384,14 @@ public class FragmentChat extends Fragment {
                     loadUserInfo(chatId, otherUserId, lastMessage, lastMessageTime);
 
                 } catch (Exception e) {
-                    Log.e("FragmentChat", "Error processing chat data for chat: " + chatId, e);
+                    Log.e("FragmentChat", "Error processing chat data", e);
                 }
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 if (isFragmentDestroyed) return;
-                Log.e("FragmentChat", "Chat listener cancelled for chat: " + chatId, error.toException());
+                Log.e("FragmentChat", "Chat listener cancelled", error.toException());
             }
         };
 
@@ -441,6 +410,7 @@ public class FragmentChat extends Fragment {
                         if (isFragmentDestroyed || binding == null) return;
 
                         String chatName = "Unknown User";
+                        String profileImage = "";
                         if (userSnapshot.exists()) {
                             try {
                                 chatName = userSnapshot.child("login").getValue(String.class);
@@ -452,6 +422,8 @@ public class FragmentChat extends Fragment {
                                         chatName = "User";
                                     }
                                 }
+                                profileImage = userSnapshot.child("profileImage").getValue(String.class);
+                                if (profileImage == null) profileImage = "";
                             } catch (Exception e) {
                                 Log.e("FragmentChat", "Error parsing user data", e);
                                 chatName = "User";
@@ -464,25 +436,95 @@ public class FragmentChat extends Fragment {
                         chat.setLastMessageTimestamp(lastMessageTime);
                         chat.setUnreadCount(0);
                         chat.setGroup(false);
+                        chat.setProfileImage(profileImage);
 
-                        updateOrAddChatSilently(chat);
+                        updateOrAddChat(chat);
+                        // Загружаем кастомные настройки из правильного пути
+                        loadCustomSettings(otherUserId, chatId);
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
                         if (isFragmentDestroyed) return;
-                        Log.e("FragmentChat", "Failed to load user info for user: " + otherUserId, error.toException());
+                        Log.e("FragmentChat", "Failed to load user info", error.toException());
                     }
                 });
     }
 
-    private void updateOrAddChatSilently(Chat newChat) {
+    // ИСПРАВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек из правильного пути
+    private void loadCustomSettings(String otherUserId, String chatId) {
+        if (isFragmentDestroyed) return;
+
+        // Удаляем предыдущий слушатель если есть
+        if (customSettingsListeners.containsKey(otherUserId)) {
+            FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                    .child(currentUserId)
+                    .child("chatContacts")
+                    .child(otherUserId)
+                    .removeEventListener(customSettingsListeners.get(otherUserId));
+        }
+
+        ValueEventListener customSettingsListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (isFragmentDestroyed || binding == null) return;
+
+                for (int i = 0; i < combinedChats.size(); i++) {
+                    Chat chat = combinedChats.get(i);
+                    if (chat.getChat_id().equals(chatId) && !chat.isGroup()) {
+
+                        boolean needsUpdate = false;
+
+                        if (snapshot.exists()) {
+                            String customName = snapshot.child("customName").getValue(String.class);
+                            String customImage = snapshot.child("customImage").getValue(String.class);
+
+                            // Применяем кастомное имя если есть
+                            if (customName != null && !customName.isEmpty()) {
+                                if (!customName.equals(chat.getChat_name())) {
+                                    chat.setChat_name(customName);
+                                    needsUpdate = true;
+                                }
+                            }
+
+                            // Применяем кастомное фото если есть
+                            if (customImage != null && !customImage.isEmpty()) {
+                                if (!customImage.equals(chat.getProfileImage())) {
+                                    chat.setProfileImage(customImage);
+                                    needsUpdate = true;
+                                }
+                            }
+                        }
+
+                        // Обновляем UI только если есть изменения
+                        if (needsUpdate && chatsAdapter != null) {
+                            chatsAdapter.notifyItemChanged(i);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("FragmentChat", "Failed to load custom settings for user: " + otherUserId, error.toException());
+            }
+        };
+
+        customSettingsListeners.put(otherUserId, customSettingsListener);
+        FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                .child(currentUserId)
+                .child("chatContacts")
+                .child(otherUserId)
+                .addValueEventListener(customSettingsListener);
+    }
+
+    private void updateOrAddChat(Chat newChat) {
         if (isFragmentDestroyed) return;
 
         String chatId = newChat.getChat_id();
         int existingIndex = -1;
 
-        // Ищем существующий чат
         for (int i = 0; i < combinedChats.size(); i++) {
             Chat chat = combinedChats.get(i);
             if (!chat.isGroup() && chat.getChat_id().equals(chatId)) {
@@ -492,108 +534,70 @@ public class FragmentChat extends Fragment {
         }
 
         if (existingIndex != -1) {
-            // Обновляем существующий чат
-            Chat existingChat = combinedChats.get(existingIndex);
-            if (needsUpdate(existingChat, newChat)) {
-                combinedChats.set(existingIndex, newChat);
-                sortChatsSilently();
-            }
+            combinedChats.set(existingIndex, newChat);
         } else {
-            // Добавляем новый чат
             combinedChats.add(newChat);
-            sortChatsSilently();
         }
+        sortChats();
     }
 
-    private void sortChatsSilently() {
+    private void sortChats() {
         if (isFragmentDestroyed || binding == null) return;
 
         try {
-            // Сохраняем позицию перед сортировкой
-            saveScrollPosition();
-
             // Сортируем по времени последнего сообщения (новые сверху)
             Collections.sort(combinedChats, (chat1, chat2) ->
                     Long.compare(chat2.getLastMessageTimestamp(), chat1.getLastMessageTimestamp()));
 
             if (chatsAdapter != null) {
-                // Используем notifyDataSetChanged без сброса позиции
                 chatsAdapter.notifyDataSetChanged();
             }
-
-            // Восстанавливаем позицию после обновления
-            restoreScrollPosition();
-
-            Log.d("FragmentChat", "Chats sorted silently. Total: " + combinedChats.size());
         } catch (Exception e) {
             Log.e("FragmentChat", "Error sorting chats", e);
         }
     }
 
-    private void saveScrollPosition() {
-        if (layoutManager != null) {
-            scrollPosition = layoutManager.findFirstVisibleItemPosition();
-            shouldRestoreScrollPosition = true;
-        }
-    }
-
-    private void restoreScrollPosition() {
-        if (layoutManager != null && shouldRestoreScrollPosition && scrollPosition >= 0) {
-            binding.chatsRv.post(new Runnable() {
-                @Override
-                public void run() {
-                    if (!isFragmentDestroyed && binding != null && scrollPosition < combinedChats.size()) {
-                        layoutManager.scrollToPositionWithOffset(scrollPosition, 0);
-                    }
-                }
-            });
-        }
-    }
-
     private void openChatActivity(String chatId, String otherUserId) {
-        Intent intent = new Intent(getContext(), com.example.androidmessage1.ChatActivity.class);
-        intent.putExtra("chatId", chatId);
-        intent.putExtra("otherUserId", otherUserId);
-        startActivity(intent);
+        Log.d("FragmentChat", "Opening chat activity: " + chatId);
+        try {
+            Intent intent = new Intent(getContext(), com.example.androidmessage1.ChatActivity.class);
+            intent.putExtra("chatId", chatId);
+            intent.putExtra("otherUserId", otherUserId);
+            startActivity(intent);
+        } catch (Exception e) {
+            Log.e("FragmentChat", "Error opening chat", e);
+            Toast.makeText(getContext(), "Error opening chat", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void openGroupChat(String groupId, String groupName) {
-        Intent intent = new Intent(getContext(), GroupChatActivity.class);
-        intent.putExtra("groupId", groupId);
-        intent.putExtra("groupName", groupName);
-        startActivity(intent);
+        Log.d("FragmentChat", "Opening group chat: " + groupId);
+        try {
+            Intent intent = new Intent(getContext(), GroupChatActivity.class);
+            intent.putExtra("groupId", groupId);
+            intent.putExtra("groupName", groupName);
+            startActivity(intent);
+        } catch (Exception e) {
+            Log.e("FragmentChat", "Error opening group chat", e);
+            Toast.makeText(getContext(), "Error opening group chat", Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override
     public void onResume() {
         super.onResume();
         Log.d("FragmentChat", "Fragment resumed");
-
-        // При возвращении обновляем счетчики непрочитанных
-        if (chatsAdapter != null) {
-            chatsAdapter.notifyDataSetChanged();
-        }
-    }
-
-    @Override
-    public void onPause() {
-        super.onPause();
-        saveScrollPosition();
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        Log.d("FragmentChat", "onDestroyView called");
-
         isFragmentDestroyed = true;
 
-        // Очищаем адаптер
         if (chatsAdapter != null) {
             chatsAdapter.cleanup();
         }
 
-        // Очищаем слушатели списков
         if (chatsListListener != null) {
             try {
                 FirebaseDatabase.getInstance().getReference("Chats")
@@ -601,7 +605,6 @@ public class FragmentChat extends Fragment {
             } catch (Exception e) {
                 Log.e("FragmentChat", "Error removing chats list listener", e);
             }
-            chatsListListener = null;
         }
 
         if (groupsListListener != null) {
@@ -611,10 +614,8 @@ public class FragmentChat extends Fragment {
             } catch (Exception e) {
                 Log.e("FragmentChat", "Error removing groups list listener", e);
             }
-            groupsListListener = null;
         }
 
-        // Очищаем слушатели отдельных чатов и групп
         for (Map.Entry<String, ValueEventListener> entry : chatListeners.entrySet()) {
             try {
                 FirebaseDatabase.getInstance().getReference("Chats").child(entry.getKey())
@@ -633,21 +634,22 @@ public class FragmentChat extends Fragment {
             }
         }
 
+        for (Map.Entry<String, ValueEventListener> entry : customSettingsListeners.entrySet()) {
+            try {
+                FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                        .child(currentUserId)
+                        .child("chatContacts")
+                        .child(entry.getKey())
+                        .removeEventListener(entry.getValue());
+            } catch (Exception e) {
+                Log.e("FragmentChat", "Error removing custom settings listener", e);
+            }
+        }
+
         chatListeners.clear();
         groupListeners.clear();
-
-        // Очищаем списки
+        customSettingsListeners.clear();
         combinedChats.clear();
-
         binding = null;
-
-        Log.d("FragmentChat", "Fragment destroyed and listeners cleaned up");
-    }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        Log.d("FragmentChat", "onDestroy called");
-        isFragmentDestroyed = true;
     }
 }

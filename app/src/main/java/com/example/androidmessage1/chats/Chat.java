@@ -11,6 +11,7 @@ public class Chat {
     private int unreadCount;
     private boolean isGroup;
     private int membersCount;
+    private String profileImage; // Добавленное поле
 
     public Chat() {
         // Default constructor required for Firebase
@@ -27,6 +28,7 @@ public class Chat {
         this.unreadCount = 0;
         this.isGroup = false;
         this.membersCount = 0;
+        this.profileImage = ""; // Инициализация нового поля
     }
 
     // Getters and Setters
@@ -59,4 +61,8 @@ public class Chat {
 
     public int getMembersCount() { return membersCount; }
     public void setMembersCount(int membersCount) { this.membersCount = membersCount; }
+
+    // Новые геттер и сеттер для profileImage
+    public String getProfileImage() { return profileImage; }
+    public void setProfileImage(String profileImage) { this.profileImage = profileImage; }
 }

@@ -24,6 +24,8 @@
             android:exported="false"
             android:parentActivityName=".MainActivity" />
 
+        <activity android:name=".ProfileChatActivity" />
+
         <activity
             android:name=".groups.GroupChatActivity"
             android:exported="false"

@@ -31,9 +31,9 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     private String currentUserId;
     private OnChatClickListener listener;
     private HashMap<String, ValueEventListener> unreadListeners;
-    private HashMap<String, String> avatarCache; // Кэш для аватарок
-    private HashMap<String, Integer> unreadCountCache; // Кэш для непрочитанных сообщений
-    private HashMap<String, Integer> viewHolderPositions; // Отслеживание позиций ViewHolder
+    private HashMap<String, String> avatarCache;
+    private HashMap<String, Integer> unreadCountCache;
+    private HashMap<String, Integer> viewHolderPositions;
 
     public interface OnChatClickListener {
         void onChatClick(int position);
@@ -73,6 +73,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         // Сохраняем позицию ViewHolder для этого чата
         viewHolderPositions.put(chatId, position);
 
+        // Устанавливаем имя чата (уже содержит кастомное имя если есть)
         holder.username_tv.setText(chat.getChat_name());
 
         String lastMessage = chat.getLastMessage();
@@ -94,7 +95,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         if (cachedUnreadCount != null) {
             updateUnreadBadge(holder, cachedUnreadCount);
         } else {
-            // Если нет в кэше, устанавливаем 0 и запускаем слушатель
             updateUnreadBadge(holder, 0);
         }
 
@@ -108,11 +108,11 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         // Устанавливаем placeholder аватарку
         holder.profile_iv.setImageResource(R.drawable.artem);
 
-        // Загружаем аватарку с кэшированием
+        // Загружаем аватарку с учетом кастомных данных
         if (chat.isGroup()) {
             loadGroupAvatar(holder, chatId, position);
         } else {
-            loadUserAvatar(holder, chat.getOther_user_id(), position);
+            loadUserAvatarWithCustomizations(holder, chat, position);
         }
 
         holder.itemView.setOnClickListener(v -> {
@@ -136,6 +136,102 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         });
     }
 
+    private void loadUserAvatarWithCustomizations(ChatViewHolder holder, Chat chat, int position) {
+        final int currentPosition = position;
+        String userId = chat.getOther_user_id();
+
+        // Сначала проверяем есть ли кастомная аватарка в объекте Chat
+        if (chat.getProfileImage() != null && !chat.getProfileImage().isEmpty()) {
+            loadAvatarWithGlide(holder, chat.getProfileImage(), currentPosition);
+            return;
+        }
+
+        // Проверяем кэш кастомных аватарок
+        String customAvatarCacheKey = "custom_user_" + userId;
+        String cachedCustomAvatar = avatarCache.get(customAvatarCacheKey);
+        if (cachedCustomAvatar != null) {
+            loadAvatarWithGlide(holder, cachedCustomAvatar, currentPosition);
+            return;
+        }
+
+        // Загружаем кастомные данные из Firebase
+        FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                .child(currentUserId)
+                .child("chatContacts")
+                .child(userId)
+                .child("customImage")
+                .get()
+                .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
+                    @Override
+                    public void onComplete(@NonNull Task<DataSnapshot> task) {
+                        try {
+                            if (holder.getAdapterPosition() != currentPosition) {
+                                return;
+                            }
+
+                            if (task.isSuccessful() && task.getResult() != null && task.getResult().getValue() != null) {
+                                String customImageUrl = task.getResult().getValue().toString();
+
+                                if (customImageUrl != null && !customImageUrl.isEmpty()) {
+                                    // Сохраняем в кэш кастомных аватарок
+                                    avatarCache.put(customAvatarCacheKey, customImageUrl);
+                                    loadAvatarWithGlide(holder, customImageUrl, currentPosition);
+                                } else {
+                                    // Если нет кастомной аватарки, загружаем оригинальную
+                                    loadOriginalUserAvatar(holder, userId, currentPosition);
+                                }
+                            } else {
+                                // Если нет кастомных данных, загружаем оригинальную аватарку
+                                loadOriginalUserAvatar(holder, userId, currentPosition);
+                            }
+                        } catch (Exception e) {
+                            loadOriginalUserAvatar(holder, userId, currentPosition);
+                        }
+                    }
+                });
+    }
+
+    private void loadOriginalUserAvatar(ChatViewHolder holder, String userId, int position) {
+        final int currentPosition = position;
+
+        // Проверяем кэш оригинальных аватарок
+        String originalAvatarCacheKey = "user_" + userId;
+        String cachedAvatar = avatarCache.get(originalAvatarCacheKey);
+        if (cachedAvatar != null) {
+            loadAvatarWithGlide(holder, cachedAvatar, currentPosition);
+            return;
+        }
+
+        FirebaseDatabase.getInstance().getReference().child("Users").child(userId)
+                .child("profileImage").get()
+                .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
+                    @Override
+                    public void onComplete(@NonNull Task<DataSnapshot> task) {
+                        try {
+                            if (holder.getAdapterPosition() != currentPosition) {
+                                return;
+                            }
+
+                            if (task.isSuccessful() && task.getResult() != null && task.getResult().getValue() != null) {
+                                String profileImageUrl = task.getResult().getValue().toString();
+
+                                if (profileImageUrl != null && !profileImageUrl.isEmpty()) {
+                                    // Сохраняем в кэш
+                                    avatarCache.put(originalAvatarCacheKey, profileImageUrl);
+                                    loadAvatarWithGlide(holder, profileImageUrl, currentPosition);
+                                } else {
+                                    holder.profile_iv.setImageResource(R.drawable.artem);
+                                }
+                            } else {
+                                holder.profile_iv.setImageResource(R.drawable.artem);
+                            }
+                        } catch (Exception e) {
+                            holder.profile_iv.setImageResource(R.drawable.artem);
+                        }
+                    }
+                });
+    }
+
     private void setupUnreadMessagesListener(String chatId, ChatViewHolder holder) {
         // Удаляем предыдущий слушатель если есть
         if (unreadListeners.containsKey(chatId)) {
@@ -150,14 +246,11 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 int unreadCount = 0;
 
-                Log.d("ChatsAdapter", "Checking unread messages in chat: " + chatId);
-
                 if (snapshot.exists()) {
                     for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
                         String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
                         Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
 
-                        // ВАЖНО: Считаем только сообщения от других пользователей, которые не прочитаны
                         if (ownerId != null &&
                                 !ownerId.equals(currentUserId) &&
                                 (isRead == null || !isRead)) {
@@ -172,15 +265,12 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                 // Обновляем UI только если ViewHolder все еще на правильной позиции
                 Integer currentPosition = viewHolderPositions.get(chatId);
                 if (currentPosition != null && holder.getAdapterPosition() == currentPosition) {
-                    // Обновляем UI только если количество изменилось
                     Object currentTag = holder.itemView.getTag();
                     if (currentTag == null || !currentTag.equals(unreadCount)) {
                         updateUnreadBadge(holder, unreadCount);
                         holder.itemView.setTag(unreadCount);
                     }
                 }
-
-                Log.d("ChatsAdapter", "Unread messages in chat " + chatId + ": " + unreadCount);
             }
 
             @Override
@@ -214,14 +304,11 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 int unreadCount = 0;
 
-                Log.d("ChatsAdapter", "Checking unread messages in group: " + groupId);
-
                 if (snapshot.exists()) {
                     for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
                         String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
                         Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
 
-                        // ВАЖНО: Считаем только сообщения от других пользователей, которые не прочитаны
                         if (ownerId != null &&
                                 !ownerId.equals(currentUserId) &&
                                 (isRead == null || !isRead)) {
@@ -236,15 +323,12 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                 // Обновляем UI только если ViewHolder все еще на правильной позиции
                 Integer currentPosition = viewHolderPositions.get(groupId);
                 if (currentPosition != null && holder.getAdapterPosition() == currentPosition) {
-                    // Обновляем UI только если количество изменилось
                     Object currentTag = holder.itemView.getTag();
                     if (currentTag == null || !currentTag.equals(unreadCount)) {
                         updateUnreadBadge(holder, unreadCount);
                         holder.itemView.setTag(unreadCount);
                     }
                 }
-
-                Log.d("ChatsAdapter", "Unread messages in group " + groupId + ": " + unreadCount);
             }
 
             @Override
@@ -269,13 +353,11 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                 holder.message_count_badge.setVisibility(View.VISIBLE);
                 holder.message_count_badge.setText(unreadCount > 99 ? "99+" : String.valueOf(unreadCount));
 
-                // Черный цвет и жирный шрифт для непрочитанных
                 holder.last_message_tv.setTextColor(0xFF000000);
                 holder.last_message_tv.setTypeface(holder.last_message_tv.getTypeface(), android.graphics.Typeface.BOLD);
             } else {
                 holder.message_count_badge.setVisibility(View.GONE);
 
-                // Серый цвет и обычный шрифт для прочитанных
                 holder.last_message_tv.setTextColor(0xFF757575);
                 holder.last_message_tv.setTypeface(holder.last_message_tv.getTypeface(), android.graphics.Typeface.NORMAL);
             }
@@ -308,7 +390,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                             }
                         }
 
-                        // ВАЖНО: Обновляем кэш после отметки как прочитанные
+                        // Обновляем кэш после отметки как прочитанные
                         unreadCountCache.put(chatId, 0);
 
                         // Принудительно обновляем UI для этого чата
@@ -341,7 +423,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                             }
                         }
 
-                        // ВАЖНО: Обновляем кэш после отметки как прочитанные
+                        // Обновляем кэш после отметки как прочитанные
                         unreadCountCache.put(groupId, 0);
 
                         // Принудительно обновляем UI для этой группы
@@ -358,54 +440,12 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                 });
     }
 
-    private void loadUserAvatar(ChatViewHolder holder, String userId, int position) {
-        final int currentPosition = position;
-
-        // Проверяем кэш
-        String cachedAvatar = avatarCache.get("user_" + userId);
-        if (cachedAvatar != null) {
-            // Используем кэшированную аватарку
-            loadAvatarWithGlide(holder, cachedAvatar, currentPosition);
-            return;
-        }
-
-        FirebaseDatabase.getInstance().getReference().child("Users").child(userId)
-                .child("profileImage").get()
-                .addOnCompleteListener(new OnCompleteListener<DataSnapshot>() {
-                    @Override
-                    public void onComplete(@NonNull Task<DataSnapshot> task) {
-                        try {
-                            if (holder.getAdapterPosition() != currentPosition) {
-                                return;
-                            }
-
-                            if (task.isSuccessful() && task.getResult() != null && task.getResult().getValue() != null) {
-                                String profileImageUrl = task.getResult().getValue().toString();
-
-                                if (profileImageUrl != null && !profileImageUrl.isEmpty()) {
-                                    // Сохраняем в кэш
-                                    avatarCache.put("user_" + userId, profileImageUrl);
-                                    loadAvatarWithGlide(holder, profileImageUrl, currentPosition);
-                                } else {
-                                    holder.profile_iv.setImageResource(R.drawable.artem);
-                                }
-                            } else {
-                                holder.profile_iv.setImageResource(R.drawable.artem);
-                            }
-                        } catch (Exception e) {
-                            holder.profile_iv.setImageResource(R.drawable.artem);
-                        }
-                    }
-                });
-    }
-
     private void loadGroupAvatar(ChatViewHolder holder, String groupId, int position) {
         final int currentPosition = position;
 
         // Проверяем кэш
         String cachedAvatar = avatarCache.get("group_" + groupId);
         if (cachedAvatar != null) {
-            // Используем кэшированную аватарку
             loadAvatarWithGlide(holder, cachedAvatar, currentPosition);
             return;
         }
@@ -424,7 +464,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
                                 String groupImageUrl = task.getResult().getValue().toString();
 
                                 if (groupImageUrl != null && !groupImageUrl.isEmpty()) {
-                                    // Сохраняем в кэш
                                     avatarCache.put("group_" + groupId, groupImageUrl);
                                     loadAvatarWithGlide(holder, groupImageUrl, currentPosition);
                                 } else {
@@ -447,10 +486,11 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
 
         Glide.with(holder.itemView.getContext())
                 .load(imageUrl)
-                .diskCacheStrategy(DiskCacheStrategy.ALL) // Кэшируем на диске
+                .circleCrop()
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .placeholder(R.drawable.artem)
                 .error(R.drawable.artem)
-                .dontAnimate() // Отключаем анимацию для предотвращения мерцания
+                .dontAnimate()
                 .into(holder.profile_iv);
     }
 
@@ -468,19 +508,17 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
             }
         }
         unreadListeners.clear();
-        avatarCache.clear(); // Очищаем кэш
-        unreadCountCache.clear(); // Очищаем кэш непрочитанных
-        viewHolderPositions.clear(); // Очищаем позиции
+        avatarCache.clear();
+        unreadCountCache.clear();
+        viewHolderPositions.clear();
     }
 
     @Override
     public void onViewRecycled(@NonNull ChatViewHolder holder) {
         super.onViewRecycled(holder);
-        // Очищаем тег при переиспользовании ViewHolder
         holder.itemView.setTag(null);
     }
 
-    // Метод для обновления конкретного чата
     public void updateChat(Chat updatedChat) {
         for (int i = 0; i < chats.size(); i++) {
             Chat chat = chats.get(i);
@@ -492,7 +530,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         }
     }
 
-    // Метод для принудительного обновления счетчика непрочитанных
     public void forceRefreshUnreadCount(String chatId) {
         unreadCountCache.remove(chatId);
         Integer position = viewHolderPositions.get(chatId);

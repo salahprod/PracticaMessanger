@@ -39,9 +39,14 @@ public class ChatActivity extends AppCompatActivity {
     private List<Message> messages = new ArrayList<>();
     private ValueEventListener messagesListener;
     private ValueEventListener userStatusListener;
+    private ValueEventListener customSettingsListener;
     private String currentUserId;
     private Handler statusUpdateHandler;
     private Runnable statusUpdateRunnable;
+
+    // Переменные для хранения оригинальных данных
+    private String originalUsername = "";
+    private String originalProfileImage = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,6 +73,7 @@ public class ChatActivity extends AppCompatActivity {
             getOtherUserIdFromChat();
         } else {
             loadOtherUserData();
+            loadCustomSettings(); // Загружаем кастомные настройки
             loadMessages();
             setupKeyboardBehavior();
             markAllMessagesAsRead();
@@ -112,7 +118,9 @@ public class ChatActivity extends AppCompatActivity {
 
     private void initializeViews() {
         binding.messagesRv.setLayoutManager(new LinearLayoutManager(this));
-        messageAdapter = new MessageAdapter(messages);
+
+        // Создаем адаптер с передачей chatId и otherUserId
+        messageAdapter = new MessageAdapter(messages, chatId, otherUserId);
         binding.messagesRv.setAdapter(messageAdapter);
 
         messageAdapter.registerAdapterDataObserver(new androidx.recyclerview.widget.RecyclerView.AdapterDataObserver() {
@@ -128,16 +136,123 @@ public class ChatActivity extends AppCompatActivity {
                 sendMessage();
             }
         });
+
         binding.exitBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 exitToMainActivity();
             }
         });
+
         binding.sendVideoBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 Toast.makeText(ChatActivity.this, "Video feature coming soon", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Добавляем обработчик клика на аватарку пользователя
+        binding.chatUserAvatar.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openProfileChatActivity();
+            }
+        });
+    }
+
+    // Метод для открытия ProfileChatActivity
+    private void openProfileChatActivity() {
+        if (otherUserId != null && chatId != null) {
+            Intent intent = new Intent(ChatActivity.this, ProfileChatActivity.class);
+            intent.putExtra("otherUserId", otherUserId);
+            intent.putExtra("chatId", chatId);
+            startActivity(intent);
+        } else {
+            Toast.makeText(this, "Chat data not available", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ИСПРАВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек из правильного пути
+    private void loadCustomSettings() {
+        if (otherUserId == null || currentUserId == null) return;
+
+        // Удаляем предыдущий слушатель если есть
+        if (customSettingsListener != null) {
+            FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                    .child(currentUserId)
+                    .child("chatContacts")
+                    .child(otherUserId)
+                    .removeEventListener(customSettingsListener);
+        }
+
+        customSettingsListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                String displayName = originalUsername;
+                String displayImage = originalProfileImage;
+
+                if (snapshot.exists()) {
+                    String customName = snapshot.child("customName").getValue(String.class);
+                    String customImage = snapshot.child("customImage").getValue(String.class);
+
+                    // Используем кастомное имя если есть
+                    if (customName != null && !customName.isEmpty()) {
+                        displayName = customName;
+                    }
+
+                    // Используем кастомное фото если есть
+                    if (customImage != null && !customImage.isEmpty()) {
+                        displayImage = customImage;
+                    }
+                }
+
+                // Применяем настройки в UI
+                updateUserDisplay(displayName, displayImage);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("ChatActivity", "Failed to load custom settings", error.toException());
+                // В случае ошибки используем оригинальные данные
+                updateUserDisplay(originalUsername, originalProfileImage);
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                .child(currentUserId)
+                .child("chatContacts")
+                .child(otherUserId)
+                .addValueEventListener(customSettingsListener);
+    }
+
+    // Метод для обновления отображения пользователя
+    private void updateUserDisplay(String displayName, String displayImage) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                // Устанавливаем имя
+                if (displayName != null && !displayName.isEmpty()) {
+                    binding.chatUserName.setText(displayName);
+                } else {
+                    binding.chatUserName.setText(originalUsername);
+                }
+
+                // Устанавливаем аватарку
+                if (displayImage != null && !displayImage.isEmpty()) {
+                    Glide.with(ChatActivity.this)
+                            .load(displayImage)
+                            .placeholder(R.drawable.artem)
+                            .error(R.drawable.artem)
+                            .into(binding.chatUserAvatar);
+                } else if (originalProfileImage != null && !originalProfileImage.isEmpty()) {
+                    Glide.with(ChatActivity.this)
+                            .load(originalProfileImage)
+                            .placeholder(R.drawable.artem)
+                            .error(R.drawable.artem)
+                            .into(binding.chatUserAvatar);
+                } else {
+                    binding.chatUserAvatar.setImageResource(R.drawable.artem);
+                }
             }
         });
     }
@@ -471,26 +586,37 @@ public class ChatActivity extends AppCompatActivity {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         if (snapshot.exists()) {
-                            String username = snapshot.child("login").getValue(String.class);
-                            if (username != null) {
-                                binding.chatUserName.setText(username);
-                            } else {
+                            // Сохраняем оригинальные данные
+                            originalUsername = snapshot.child("login").getValue(String.class);
+                            if (originalUsername == null) {
                                 String email = snapshot.child("email").getValue(String.class);
                                 if (email != null && email.contains("@")) {
-                                    binding.chatUserName.setText(email.substring(0, email.indexOf("@")));
+                                    originalUsername = email.substring(0, email.indexOf("@"));
                                 } else {
-                                    binding.chatUserName.setText("Unknown User");
+                                    originalUsername = "Unknown User";
                                 }
                             }
 
-                            String profileImage = snapshot.child("profileImage").getValue(String.class);
-                            if (profileImage != null && !profileImage.isEmpty()) {
+                            originalProfileImage = snapshot.child("profileImage").getValue(String.class);
+                            if (originalProfileImage == null) {
+                                originalProfileImage = "";
+                            }
+
+                            // Сначала устанавливаем оригинальные данные
+                            binding.chatUserName.setText(originalUsername);
+
+                            if (originalProfileImage != null && !originalProfileImage.isEmpty()) {
                                 Glide.with(ChatActivity.this)
-                                        .load(profileImage)
+                                        .load(originalProfileImage)
                                         .placeholder(R.drawable.artem)
                                         .error(R.drawable.artem)
                                         .into(binding.chatUserAvatar);
+                            } else {
+                                binding.chatUserAvatar.setImageResource(R.drawable.artem);
                             }
+
+                            // Теперь загружаем кастомные настройки (они перезапишут оригинальные если есть)
+                            loadCustomSettings();
 
                             // Загружаем начальный статус
                             Boolean isOnline = snapshot.child("isOnline").getValue(Boolean.class);
@@ -524,6 +650,11 @@ public class ChatActivity extends AppCompatActivity {
                             if (userId1 != null && userId2 != null) {
                                 String newOtherUserId = userId1.equals(currentCurrentUserId) ? userId2 : userId1;
                                 otherUserId = newOtherUserId;
+
+                                // Обновляем данные в адаптере
+                                if (messageAdapter != null) {
+                                    messageAdapter.updateChatData(chatId, otherUserId);
+                                }
 
                                 loadOtherUserData();
                                 loadMessages();
@@ -620,6 +751,8 @@ public class ChatActivity extends AppCompatActivity {
         super.onResume();
         if (chatId != null && otherUserId != null) {
             markAllMessagesAsRead();
+            // При возвращении в чат обновляем кастомные настройки
+            loadCustomSettings();
         }
         // Обновляем онлайн статус при возвращении в приложение
         updateUserOnlineStatus();
@@ -684,6 +817,14 @@ public class ChatActivity extends AppCompatActivity {
                     .getReference("Users")
                     .child(otherUserId)
                     .removeEventListener(userStatusListener);
+        }
+
+        if (customSettingsListener != null && otherUserId != null && currentUserId != null) {
+            FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                    .child(currentUserId)
+                    .child("chatContacts")
+                    .child(otherUserId)
+                    .removeEventListener(customSettingsListener);
         }
 
         if (statusUpdateHandler != null && statusUpdateRunnable != null) {

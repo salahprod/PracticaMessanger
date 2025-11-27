@@ -10,15 +10,23 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.androidmessage1.R;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 
 import java.util.List;
 
 public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageViewHolder>{
 
     private List<Message> messages;
+    private String chatId;
+    private String otherUserId;
 
-    public MessageAdapter(List<Message> messages){
+    public MessageAdapter(List<Message> messages, String chatId, String otherUserId){
         this.messages = messages;
+        this.chatId = chatId;
+        this.otherUserId = otherUserId;
     }
 
     @NonNull
@@ -33,6 +41,9 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         Message message = messages.get(position);
         holder.messageTv.setText(message.getText());
         holder.dateTv.setText(message.getDate());
+
+        // Загружаем кастомные настройки для отображения
+        loadCustomSettings(holder, message);
 
         // ГРУППИРОВКА СООБЩЕНИЙ - УБИРАЕМ ЛИШНИЕ ОТСТУПЫ
         if (position > 0) {
@@ -67,6 +78,42 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         }
     }
 
+    private void loadCustomSettings(@NonNull MessageViewHolder holder, Message message) {
+        String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+
+        // Проверяем, что это сообщение от другого пользователя и у нас есть chatId
+        if (chatId != null && !message.getOwnerId().equals(currentUserId)) {
+            FirebaseDatabase.getInstance().getReference("UserChatSettings")
+                    .child(currentUserId)
+                    .child(chatId)
+                    .child("customSettings")
+                    .addListenerForSingleValueEvent(new ValueEventListener() {
+                        @Override
+                        public void onDataChange(@NonNull DataSnapshot snapshot) {
+                            if (snapshot.exists()) {
+                                String customName = snapshot.child("customName").getValue(String.class);
+                                String customImage = snapshot.child("customImage").getValue(String.class);
+
+                                // Здесь можно добавить логику для отображения кастомного имени
+                                // если в layout сообщения есть TextView для имени
+                                // Например:
+                                // if (customName != null && !customName.isEmpty()) {
+                                //     holder.senderName.setText(customName);
+                                // }
+
+                                // Для кастомной аватарки нужно добавить ImageView в layout
+                                // и использовать Glide для загрузки изображения
+                            }
+                        }
+
+                        @Override
+                        public void onCancelled(@NonNull DatabaseError error) {
+                            // Используем оригинальные данные
+                        }
+                    });
+        }
+    }
+
     @Override
     public int getItemCount() {
         return messages.size();
@@ -83,6 +130,12 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             return R.layout.message_from_curr_user_rv_item;
         else
             return R.layout.message_rv_item; // Сообщения других пользователей (слева)
+    }
+
+    // Метод для обновления chatId и otherUserId если нужно
+    public void updateChatData(String chatId, String otherUserId) {
+        this.chatId = chatId;
+        this.otherUserId = otherUserId;
     }
 
     static class MessageViewHolder extends RecyclerView.ViewHolder{

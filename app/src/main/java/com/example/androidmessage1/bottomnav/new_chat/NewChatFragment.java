@@ -57,6 +57,10 @@ public class NewChatFragment extends Fragment {
     private HashMap<String, Integer> unreadCountsMap = new HashMap<>();
     private HashMap<String, ValueEventListener> unreadListeners = new HashMap<>();
 
+    // HashMap для хранения кастомных настроек
+    private HashMap<String, CustomSettings> customSettingsMap = new HashMap<>();
+    private HashMap<String, ValueEventListener> customSettingsListeners = new HashMap<>();
+
     // Слушатели для статусов
     private ValueEventListener userStatusListener;
     private ValueEventListener usersListListener;
@@ -75,6 +79,16 @@ public class NewChatFragment extends Fragment {
             this.lastOnlineTime = lastOnlineTime;
             this.lastOnlineDate = lastOnlineDate;
             this.hasOnlineData = hasOnlineData;
+        }
+    }
+
+    private class CustomSettings {
+        String customName;
+        String customImage;
+
+        CustomSettings(String customName, String customImage) {
+            this.customName = customName;
+            this.customImage = customImage;
         }
     }
 
@@ -121,9 +135,20 @@ public class NewChatFragment extends Fragment {
 
     private void cleanupAllListeners() {
         // Очищаем слушатели непрочитанных сообщений
-        for (ValueEventListener listener : unreadListeners.values()) {
+        for (HashMap.Entry<String, ValueEventListener> entry : unreadListeners.entrySet()) {
             try {
-                FirebaseDatabase.getInstance().getReference().removeEventListener(listener);
+                if (entry.getKey().startsWith("group_")) {
+                    String groupId = entry.getKey().substring(6);
+                    FirebaseDatabase.getInstance().getReference("Groups")
+                            .child(groupId)
+                            .child("messages")
+                            .removeEventListener(entry.getValue());
+                } else {
+                    FirebaseDatabase.getInstance().getReference("Chats")
+                            .child(entry.getKey())
+                            .child("messages")
+                            .removeEventListener(entry.getValue());
+                }
             } catch (Exception e) {
                 Log.e("NewChatFragment", "Error removing unread listener", e);
             }
@@ -159,8 +184,23 @@ public class NewChatFragment extends Fragment {
             groupsListListener = null;
         }
 
+        // Очищаем слушатели кастомных настроек
+        for (HashMap.Entry<String, ValueEventListener> entry : customSettingsListeners.entrySet()) {
+            try {
+                FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                        .child(currentUserId)
+                        .child("chatContacts")
+                        .child(entry.getKey())
+                        .removeEventListener(entry.getValue());
+            } catch (Exception e) {
+                Log.e("NewChatFragment", "Error removing custom settings listener", e);
+            }
+        }
+        customSettingsListeners.clear();
+
         unreadCountsMap.clear();
         userStatusMap.clear();
+        customSettingsMap.clear();
     }
 
     private void setupRecyclerView() {
@@ -239,31 +279,46 @@ public class NewChatFragment extends Fragment {
         // Поиск пользователей
         for (int i = 0; i < usersList.size(); i++) {
             User user = usersList.get(i);
-            if (user.getUsername().toLowerCase().contains(lowerCaseQuery)) {
+            String userId = userIdsList.get(i);
+
+            // Проверяем кастомное имя
+            String displayName = user.getUsername();
+            CustomSettings customSettings = customSettingsMap.get(userId);
+            if (customSettings != null && customSettings.customName != null && !customSettings.customName.isEmpty()) {
+                displayName = customSettings.customName;
+            }
+
+            if (displayName.toLowerCase().contains(lowerCaseQuery)) {
+                // Создаем копию пользователя для отображения
+                User displayUser = new User(displayName, user.getProfileImage());
+
+                // Применяем кастомное фото если есть
+                if (customSettings != null && customSettings.customImage != null && !customSettings.customImage.isEmpty()) {
+                    displayUser.setProfileImage(customSettings.customImage);
+                }
+
                 // Добавляем статус пользователю
-                String userId = userIdsList.get(i);
                 UserStatus status = userStatusMap.get(userId);
                 if (status != null) {
-                    user.setLastMessage(formatUserStatus(status));
-                    // Устанавливаем цвет статуса
-                    user.setStatusColor(getStatusColor(status.isOnline));
+                    displayUser.setLastMessage(formatUserStatus(status));
+                    displayUser.setStatusColor(getStatusColor(status.isOnline));
                 } else {
-                    user.setLastMessage("offline");
-                    user.setStatusColor(Color.GRAY);
+                    displayUser.setLastMessage("offline");
+                    displayUser.setStatusColor(Color.GRAY);
                 }
 
                 // Добавляем количество непрочитанных сообщений
                 Integer unreadCount = unreadCountsMap.get(userId);
                 if (unreadCount != null && unreadCount > 0) {
-                    user.setUnreadCount(unreadCount);
+                    displayUser.setUnreadCount(unreadCount);
                 } else {
-                    user.setUnreadCount(0);
+                    displayUser.setUnreadCount(0);
                 }
 
                 // Устанавливаем ID пользователя
-                user.setUserId(userId);
+                displayUser.setUserId(userId);
 
-                searchResults.add(user);
+                searchResults.add(displayUser);
             }
         }
 
@@ -274,11 +329,11 @@ public class NewChatFragment extends Fragment {
                 // Создаем User объект для отображения группы
                 User groupAsUser = new User(
                         group.getGroupName(),
-                        group.getGroupImage()
+                        group.getGroupImage() != null ? group.getGroupImage() : ""
                 );
 
                 // Показываем количество участников в lastMessage
-                int membersCount = group.getMembers().size();
+                int membersCount = group.getMembers() != null ? group.getMembers().size() : 0;
                 String membersText = membersCount + " participant" + (membersCount > 1 ? "s" : "");
                 groupAsUser.setLastMessage(membersText);
                 groupAsUser.setStatusColor(Color.GRAY);
@@ -471,6 +526,9 @@ public class NewChatFragment extends Fragment {
 
                     // Настраиваем слушатель непрочитанных сообщений для этого пользователя
                     setupUnreadMessagesListener(userId);
+
+                    // Настраиваем слушатель кастомных настроек для этого пользователя
+                    setupCustomSettingsListener(userId);
                 }
 
                 Log.d("NewChatFragment", "Loaded " + usersList.size() + " users with status");
@@ -486,6 +544,50 @@ public class NewChatFragment extends Fragment {
         };
 
         FirebaseDatabase.getInstance().getReference("Users").addValueEventListener(usersListListener);
+    }
+
+    // ИСПРАВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек из правильного пути
+    private void setupCustomSettingsListener(String userId) {
+        // Удаляем предыдущий слушатель если есть
+        if (customSettingsListeners.containsKey(userId)) {
+            FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                    .child(currentUserId)
+                    .child("chatContacts")
+                    .child(userId)
+                    .removeEventListener(customSettingsListeners.get(userId));
+        }
+
+        ValueEventListener customSettingsListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
+                    String customName = snapshot.child("customName").getValue(String.class);
+                    String customImage = snapshot.child("customImage").getValue(String.class);
+
+                    customSettingsMap.put(userId, new CustomSettings(customName, customImage));
+
+                    // Обновляем UI если этот пользователь в результатах поиска
+                    if (binding != null && !binding.searchEt.getText().toString().trim().isEmpty()) {
+                        performSearch(binding.searchEt.getText().toString().trim());
+                    }
+                } else {
+                    // Если кастомных настроек нет, удаляем из мапы
+                    customSettingsMap.remove(userId);
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("NewChatFragment", "Custom settings listener cancelled for user: " + userId, error.toException());
+            }
+        };
+
+        customSettingsListeners.put(userId, customSettingsListener);
+        FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                .child(currentUserId)
+                .child("chatContacts")
+                .child(userId)
+                .addValueEventListener(customSettingsListener);
     }
 
     private void setupUnreadMessagesListener(String userId) {
