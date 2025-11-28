@@ -72,7 +72,7 @@ public class ProfileFragment extends Fragment {
                                 uploadImageSimple(); // запускаем загрузку
                             } catch (IOException e) {
                                 e.printStackTrace();
-                                Toast.makeText(getContext(), "Ошибка загрузки изображения", Toast.LENGTH_SHORT).show();
+                                Toast.makeText(getContext(), "Error loading image", Toast.LENGTH_SHORT).show();
                             }
                         }
                     }
@@ -268,7 +268,7 @@ public class ProfileFragment extends Fragment {
 
     private void uploadImageSimple() {
         if (filePath == null) {
-            Toast.makeText(getContext(), "Ошибка: файл не выбран", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), "Error: File not selected", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -286,7 +286,7 @@ public class ProfileFragment extends Fragment {
                 .child(uid)
                 .child("profile.jpg");
 
-        Toast.makeText(getContext(), "Начало загрузки...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(getContext(), "Starting loading...", Toast.LENGTH_SHORT).show();
 
         UploadTask uploadTask = storageRef.putFile(filePath);
 
@@ -311,19 +311,19 @@ public class ProfileFragment extends Fragment {
                         saveToDatabaseSimple(uid, downloadUrl);
                     } else {
                         Log.e(TAG, "Download URI is null");
-                        Toast.makeText(getContext(), "Не удалось получить ссылку на файл", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), "Failed to get file link", Toast.LENGTH_SHORT).show();
                     }
                 } else {
                     Exception e = task.getException();
                     Log.e(TAG, "Failed to get download URL: " + (e != null ? e.getMessage() : "unknown"));
-                    Toast.makeText(getContext(), "Ошибка получения ссылки: " + (e != null ? e.getMessage() : ""), Toast.LENGTH_LONG).show();
+                    Toast.makeText(getContext(), "Error receiving link: " + (e != null ? e.getMessage() : ""), Toast.LENGTH_LONG).show();
                 }
             }
         }).addOnFailureListener(new OnFailureListener() {
             @Override
             public void onFailure(@NonNull Exception e) {
                 Log.e(TAG, "Upload failed: " + e.getMessage());
-                Toast.makeText(getContext(), "Ошибка загрузки: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                Toast.makeText(getContext(), "Loading error: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
     }
@@ -339,7 +339,7 @@ public class ProfileFragment extends Fragment {
                     @Override
                     public void onSuccess(Void unused) {
                         Log.d(TAG, "Profile image updated in database");
-                        Toast.makeText(getContext(), "Фото профиля обновлено!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), "Profile photo updated!", Toast.LENGTH_SHORT).show();
 
                         // Обновляем изображение в UI
                         Glide.with(requireContext())
@@ -351,7 +351,7 @@ public class ProfileFragment extends Fragment {
                     @Override
                     public void onFailure(@NonNull Exception e) {
                         Log.e(TAG, "Failed to update database: " + e.getMessage());
-                        Toast.makeText(getContext(), "Ошибка сохранения в базе", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), "Error saving to database", Toast.LENGTH_SHORT).show();
                     }
                 });
     }

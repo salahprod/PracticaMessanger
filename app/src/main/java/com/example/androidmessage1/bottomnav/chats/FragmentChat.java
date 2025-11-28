@@ -45,6 +45,13 @@ public class FragmentChat extends Fragment {
     private String currentUserId;
     private boolean isFragmentDestroyed = false;
 
+    // Кэш для хранения предыдущих данных для микрообновления
+    private Map<String, String> previousGroupImages = new HashMap<>();
+    private Map<String, String> previousGroupNames = new HashMap<>();
+    private Map<String, String> previousChatNames = new HashMap<>();
+    private Map<String, String> previousChatImages = new HashMap<>();
+    private Map<String, String> previousLastMessages = new HashMap<>();
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -97,6 +104,14 @@ public class FragmentChat extends Fragment {
 
         binding.chatsRv.setAdapter(chatsAdapter);
         Log.d("FragmentChat", "RecyclerView setup completed");
+    }
+
+    // Метод для микрообновления конкретного элемента
+    private void updateSingleItem(int position) {
+        if (chatsAdapter != null && position >= 0 && position < combinedChats.size()) {
+            chatsAdapter.notifyItemChanged(position);
+            Log.d("FragmentChat", "Micro-update for item at position: " + position);
+        }
     }
 
     private void setupCreateGroupButton() {
@@ -257,7 +272,7 @@ public class FragmentChat extends Fragment {
                 try {
                     Group group = groupSnapshot.getValue(Group.class);
                     if (group != null && group.getMembers() != null && group.getMembers().contains(currentUserId)) {
-                        updateOrAddGroup(group);
+                        updateOrAddGroupWithMicroUpdate(group);
                     } else {
                         removeGroup(groupId);
                     }
@@ -278,12 +293,18 @@ public class FragmentChat extends Fragment {
                 .addValueEventListener(groupListener);
     }
 
-    private void updateOrAddGroup(Group newGroup) {
+    // НОВЫЙ МЕТОД: Обновление группы с микрообновлением
+    private void updateOrAddGroupWithMicroUpdate(Group newGroup) {
         if (isFragmentDestroyed) return;
 
         String groupId = newGroup.getGroupId();
+        String newGroupImage = newGroup.getGroupImage() != null ? newGroup.getGroupImage() : "";
+        String newGroupName = newGroup.getGroupName() != null ? newGroup.getGroupName() : "";
+        String newLastMessage = formatGroupLastMessage(newGroup);
+
         int existingIndex = -1;
 
+        // Ищем существующую группу
         for (int i = 0; i < combinedChats.size(); i++) {
             Chat chat = combinedChats.get(i);
             if (chat.isGroup() && chat.getChat_id().equals(groupId)) {
@@ -294,12 +315,42 @@ public class FragmentChat extends Fragment {
 
         Chat groupChat = createGroupChat(newGroup);
 
+        boolean needsUpdate = false;
+
         if (existingIndex != -1) {
+            // Проверяем, изменились ли данные
+            String previousImage = previousGroupImages.get(groupId);
+            String previousName = previousGroupNames.get(groupId);
+            String previousMessage = previousLastMessages.get(groupId);
+
+            if (previousImage == null || !previousImage.equals(newGroupImage) ||
+                    previousName == null || !previousName.equals(newGroupName) ||
+                    previousMessage == null || !previousMessage.equals(newLastMessage)) {
+                needsUpdate = true;
+                Log.d("FragmentChat", "Group data changed: " + newGroupName +
+                        ", image: " + newGroupImage + ", message: " + newLastMessage);
+            }
+
             combinedChats.set(existingIndex, groupChat);
+
+            if (needsUpdate) {
+                // Микрообновление только этого элемента
+                updateSingleItem(existingIndex);
+            }
         } else {
             combinedChats.add(groupChat);
+            needsUpdate = true;
         }
-        sortChats();
+
+        // Сохраняем текущие данные для будущих сравнений
+        previousGroupImages.put(groupId, newGroupImage);
+        previousGroupNames.put(groupId, newGroupName);
+        previousLastMessages.put(groupId, newLastMessage);
+
+        // Сортируем только если это новая группа или были изменения
+        if (existingIndex == -1 || needsUpdate) {
+            sortChats();
+        }
     }
 
     private Chat createGroupChat(Group group) {
@@ -357,6 +408,10 @@ public class FragmentChat extends Fragment {
             Chat chat = combinedChats.get(i);
             if (chat.isGroup() && chat.getChat_id().equals(groupId)) {
                 combinedChats.remove(i);
+                // Удаляем из кэша
+                previousGroupImages.remove(groupId);
+                previousGroupNames.remove(groupId);
+                previousLastMessages.remove(groupId);
                 if (chatsAdapter != null) {
                     chatsAdapter.notifyItemRemoved(i);
                 }
@@ -401,7 +456,7 @@ public class FragmentChat extends Fragment {
                 .addValueEventListener(chatListener);
     }
 
-    // ИСПРАВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек из правильного пути
+    // ОБНОВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек с микрообновлением
     private void loadCustomSettings(String otherUserId, String chatId, String lastMessage, long lastMessageTime) {
         if (isFragmentDestroyed) return;
 
@@ -419,7 +474,6 @@ public class FragmentChat extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (isFragmentDestroyed || binding == null) return;
 
-                // Загружаем оригинальные данные пользователя только если нет кастомной аватарки
                 if (snapshot.exists()) {
                     String customName = snapshot.child("customName").getValue(String.class);
                     String customImage = snapshot.child("customImage").getValue(String.class);
@@ -487,7 +541,7 @@ public class FragmentChat extends Fragment {
                         chat.setGroup(false);
                         chat.setProfileImage(profileImage);
 
-                        updateOrAddChat(chat);
+                        updateOrAddChatWithMicroUpdate(chat);
                     }
 
                     @Override
@@ -510,13 +564,18 @@ public class FragmentChat extends Fragment {
         chat.setGroup(false);
         chat.setProfileImage(profileImage);
 
-        updateOrAddChat(chat);
+        updateOrAddChatWithMicroUpdate(chat);
     }
 
-    private void updateOrAddChat(Chat newChat) {
+    // НОВЫЙ МЕТОД: Обновление чата с микрообновлением
+    private void updateOrAddChatWithMicroUpdate(Chat newChat) {
         if (isFragmentDestroyed) return;
 
         String chatId = newChat.getChat_id();
+        String newChatName = newChat.getChat_name();
+        String newProfileImage = newChat.getProfileImage() != null ? newChat.getProfileImage() : "";
+        String newLastMessage = newChat.getLastMessage() != null ? newChat.getLastMessage() : "";
+
         int existingIndex = -1;
 
         for (int i = 0; i < combinedChats.size(); i++) {
@@ -527,12 +586,42 @@ public class FragmentChat extends Fragment {
             }
         }
 
+        boolean needsUpdate = false;
+
         if (existingIndex != -1) {
+            // Проверяем, изменились ли данные
+            String previousName = previousChatNames.get(chatId);
+            String previousImage = previousChatImages.get(chatId);
+            String previousMessage = previousLastMessages.get(chatId);
+
+            if (previousName == null || !previousName.equals(newChatName) ||
+                    previousImage == null || !previousImage.equals(newProfileImage) ||
+                    previousMessage == null || !previousMessage.equals(newLastMessage)) {
+                needsUpdate = true;
+                Log.d("FragmentChat", "Chat data changed: " + newChatName +
+                        ", image: " + newProfileImage + ", message: " + newLastMessage);
+            }
+
             combinedChats.set(existingIndex, newChat);
+
+            if (needsUpdate) {
+                // Микрообновление только этого элемента
+                updateSingleItem(existingIndex);
+            }
         } else {
             combinedChats.add(newChat);
+            needsUpdate = true;
         }
-        sortChats();
+
+        // Сохраняем текущие данные для будущих сравнений
+        previousChatNames.put(chatId, newChatName);
+        previousChatImages.put(chatId, newProfileImage);
+        previousLastMessages.put(chatId, newLastMessage);
+
+        // Сортируем только если это новый чат или были изменения
+        if (existingIndex == -1 || needsUpdate) {
+            sortChats();
+        }
     }
 
     private void sortChats() {
@@ -643,7 +732,10 @@ public class FragmentChat extends Fragment {
         chatListeners.clear();
         groupListeners.clear();
         customSettingsListeners.clear();
-        combinedChats.clear();
+
+        // НЕ очищаем кэш данных, чтобы сохранить для сравнения
+        // combinedChats.clear();
+
         binding = null;
     }
 }

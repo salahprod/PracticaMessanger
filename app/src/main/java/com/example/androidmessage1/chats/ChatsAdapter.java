@@ -35,6 +35,11 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     private HashMap<String, Integer> unreadCountCache;
     private HashMap<String, Integer> viewHolderPositions;
 
+    // Кэши для микрообновлений
+    private HashMap<String, String> previousChatNames = new HashMap<>();
+    private HashMap<String, String> previousChatImages = new HashMap<>();
+    private HashMap<String, String> previousLastMessages = new HashMap<>();
+
     public interface OnChatClickListener {
         void onChatClick(int position);
     }
@@ -47,6 +52,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         this.avatarCache = new HashMap<>();
         this.unreadCountCache = new HashMap<>();
         this.viewHolderPositions = new HashMap<>();
+        initializePreviousData();
     }
 
     public ChatsAdapter(ArrayList<Chat> chats){
@@ -56,6 +62,17 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         this.avatarCache = new HashMap<>();
         this.unreadCountCache = new HashMap<>();
         this.viewHolderPositions = new HashMap<>();
+        initializePreviousData();
+    }
+
+    // Инициализация предыдущих данных для сравнения
+    private void initializePreviousData() {
+        for (Chat chat : chats) {
+            String chatId = chat.getChat_id();
+            previousChatNames.put(chatId, chat.getChat_name());
+            previousChatImages.put(chatId, chat.getProfileImage());
+            previousLastMessages.put(chatId, chat.getLastMessage());
+        }
     }
 
     @NonNull
@@ -134,6 +151,92 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
 
             markMessagesAsRead(chat);
         });
+    }
+
+    // МЕТОД ДЛЯ МИКРООБНОВЛЕНИЯ ОДНОГО ЭЛЕМЕНТА
+    public void updateSingleItem(int position) {
+        if (position >= 0 && position < chats.size()) {
+            Chat chat = chats.get(position);
+            String chatId = chat.getChat_id();
+
+            // Сравниваем с предыдущими данными
+            String previousName = previousChatNames.get(chatId);
+            String previousImage = previousChatImages.get(chatId);
+            String previousLastMessage = previousLastMessages.get(chatId);
+
+            String currentName = chat.getChat_name();
+            String currentImage = chat.getProfileImage();
+            String currentLastMessage = chat.getLastMessage();
+
+            boolean needsUpdate = !isEqual(previousName, currentName) ||
+                    !isEqual(previousImage, currentImage) ||
+                    !isEqual(previousLastMessage, currentLastMessage);
+
+            if (needsUpdate) {
+                Log.d("ChatsAdapter", "Micro-updating chat at position: " + position +
+                        ", chatId: " + chatId);
+
+                // Обновляем предыдущие данные
+                previousChatNames.put(chatId, currentName);
+                previousChatImages.put(chatId, currentImage);
+                previousLastMessages.put(chatId, currentLastMessage);
+
+                // Обновляем только этот элемент
+                notifyItemChanged(position);
+            }
+        }
+    }
+
+    // МЕТОД ДЛЯ ОБНОВЛЕНИЯ ИЛИ ДОБАВЛЕНИЯ ЧАТА С МИКРООБНОВЛЕНИЕМ
+    public void updateOrAddChatWithMicroUpdate(Chat updatedChat) {
+        String chatId = updatedChat.getChat_id();
+
+        for (int i = 0; i < chats.size(); i++) {
+            Chat existingChat = chats.get(i);
+            if (existingChat.getChat_id().equals(chatId)) {
+                // Нашли существующий чат - проверяем изменения
+                String previousName = previousChatNames.get(chatId);
+                String previousImage = previousChatImages.get(chatId);
+                String previousLastMessage = previousLastMessages.get(chatId);
+
+                String currentName = updatedChat.getChat_name();
+                String currentImage = updatedChat.getProfileImage();
+                String currentLastMessage = updatedChat.getLastMessage();
+
+                boolean needsUpdate = !isEqual(previousName, currentName) ||
+                        !isEqual(previousImage, currentImage) ||
+                        !isEqual(previousLastMessage, currentLastMessage);
+
+                if (needsUpdate) {
+                    Log.d("ChatsAdapter", "Micro-updating existing chat: " + chatId);
+
+                    // Обновляем данные
+                    chats.set(i, updatedChat);
+                    previousChatNames.put(chatId, currentName);
+                    previousChatImages.put(chatId, currentImage);
+                    previousLastMessages.put(chatId, currentLastMessage);
+
+                    // Микрообновление
+                    notifyItemChanged(i);
+                }
+                return;
+            }
+        }
+
+        // Чат не найден - добавляем новый
+        Log.d("ChatsAdapter", "Adding new chat: " + chatId);
+        chats.add(updatedChat);
+        previousChatNames.put(chatId, updatedChat.getChat_name());
+        previousChatImages.put(chatId, updatedChat.getProfileImage());
+        previousLastMessages.put(chatId, updatedChat.getLastMessage());
+        notifyItemInserted(chats.size() - 1);
+    }
+
+    // Вспомогательный метод для сравнения строк
+    private boolean isEqual(String str1, String str2) {
+        if (str1 == null && str2 == null) return true;
+        if (str1 == null || str2 == null) return false;
+        return str1.equals(str2);
     }
 
     private void loadUserAvatarWithCustomizations(ChatViewHolder holder, Chat chat, int position) {
@@ -511,6 +614,9 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         avatarCache.clear();
         unreadCountCache.clear();
         viewHolderPositions.clear();
+        previousChatNames.clear();
+        previousChatImages.clear();
+        previousLastMessages.clear();
     }
 
     @Override
@@ -520,14 +626,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
     }
 
     public void updateChat(Chat updatedChat) {
-        for (int i = 0; i < chats.size(); i++) {
-            Chat chat = chats.get(i);
-            if (chat.getChat_id().equals(updatedChat.getChat_id())) {
-                chats.set(i, updatedChat);
-                notifyItemChanged(i);
-                break;
-            }
-        }
+        updateOrAddChatWithMicroUpdate(updatedChat);
     }
 
     public void forceRefreshUnreadCount(String chatId) {
@@ -536,5 +635,12 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatViewHolder> {
         if (position != null && position >= 0 && position < chats.size()) {
             notifyItemChanged(position);
         }
+    }
+
+    // Обновляем предыдущие данные при полном обновлении списка
+    public void updateAllChats(ArrayList<Chat> newChats) {
+        this.chats = newChats;
+        initializePreviousData();
+        notifyDataSetChanged();
     }
 }
