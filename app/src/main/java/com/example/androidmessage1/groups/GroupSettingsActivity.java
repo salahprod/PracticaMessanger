@@ -910,7 +910,9 @@ public class GroupSettingsActivity extends AppCompatActivity {
                                         .addOnCompleteListener(task2 -> {
                                             Toast.makeText(GroupSettingsActivity.this, "You left the group", Toast.LENGTH_SHORT).show();
                                             Log.d("GroupSettings", "User left group: " + groupId);
-                                            finish();
+
+                                            // ОБНОВЛЕННЫЙ КОД: Переход в список чатов
+                                            navigateToChatsFragment();
                                         });
                             } else {
                                 Toast.makeText(GroupSettingsActivity.this, "Failed to leave group", Toast.LENGTH_SHORT).show();
@@ -945,13 +947,17 @@ public class GroupSettingsActivity extends AppCompatActivity {
                                 }
                                 Toast.makeText(GroupSettingsActivity.this, "Group deleted", Toast.LENGTH_SHORT).show();
                                 Log.d("GroupSettings", "Group deleted: " + groupId);
-                                finish();
+
+                                // ОБНОВЛЕННЫЙ КОД: Переход в список чатов
+                                navigateToChatsFragment();
                             }
 
                             @Override
                             public void onCancelled(@NonNull DatabaseError error) {
                                 Toast.makeText(GroupSettingsActivity.this, "Group deleted", Toast.LENGTH_SHORT).show();
-                                finish();
+
+                                // ОБНОВЛЕННЫЙ КОД: Переход в список чатов даже при ошибке
+                                navigateToChatsFragment();
                             }
                         });
                     } else {
@@ -959,6 +965,25 @@ public class GroupSettingsActivity extends AppCompatActivity {
                         Log.e("GroupSettings", "Failed to delete group: " + groupId);
                     }
                 });
+    }
+
+    // НОВЫЙ МЕТОД: Переход в FragmentChat (список чатов)
+    private void navigateToChatsFragment() {
+        try {
+            // Создаем Intent для возврата к основному активити с фрагментом чатов
+            Intent intent = new Intent(GroupSettingsActivity.this, com.example.androidmessage1.MainActivity.class);
+            // Устанавливаем флаг для очистки стека активити и запуска MainActivity как новой задачи
+            intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            // Можно добавить extra чтобы указать какой фрагмент открыть
+            intent.putExtra("openFragment", "chats");
+            startActivity(intent);
+            finish(); // Завершаем текущую активити
+            Log.d("GroupSettings", "Navigating back to chats fragment");
+        } catch (Exception e) {
+            Log.e("GroupSettings", "Error navigating to chats fragment", e);
+            // В случае ошибки просто завершаем активити
+            finish();
+        }
     }
 
     @Override

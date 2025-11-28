@@ -85,14 +85,15 @@
                     android:id="@+id/addMembersButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="120dp"
+                    android:layout_marginEnd="200dp"
                     android:background="@drawable/create_group_btn"
-                    app:layout_constraintTop_toTopOf="parent"
-                    app:layout_constraintBottom_toBottomOf="parent"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
                     android:paddingHorizontal="6dp"
-                    android:paddingVertical="2dp"/>
+                    android:layout_marginRight="-20dp"
+                    android:paddingVertical="2dp"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
 
                 <LinearLayout
                     android:id="@+id/leaveButton"
@@ -123,30 +124,18 @@
             </LinearLayout>
 
             <!-- ДОБАВЛЕНО: Заголовок списка участников -->
-            <TextView
-                android:id="@+id/membersListTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Participants"
-                android:textColor="#000000"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:paddingStart="16dp"
-                android:paddingTop="16dp"
-                android:paddingBottom="8dp"
-                />
 
             <!-- Список участников -->
+
+            <!-- ДОБАВЛЕНО: Сообщение когда список пустой -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/membersListLayout"
                 android:layout_width="match_parent"
                 android:layout_height="400dp"
                 android:background="#E5E5E5"
                 android:paddingTop="8dp"
-                android:paddingBottom="8dp"
-                />
+                android:paddingBottom="8dp" />
 
-            <!-- ДОБАВЛЕНО: Сообщение когда список пустой -->
             <TextView
                 android:id="@+id/emptyMembersText"
                 android:layout_width="match_parent"

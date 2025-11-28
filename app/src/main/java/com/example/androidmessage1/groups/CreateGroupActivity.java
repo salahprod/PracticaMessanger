@@ -22,6 +22,7 @@ import com.example.androidmessage1.users.UsersAdapter;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 import com.google.firebase.storage.FirebaseStorage;
@@ -30,6 +31,7 @@ import com.google.firebase.storage.StorageReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class CreateGroupActivity extends AppCompatActivity {
 
@@ -40,6 +42,7 @@ public class CreateGroupActivity extends AppCompatActivity {
     private UsersAdapter usersAdapter;
     private Uri selectedImageUri;
     private String currentUserId;
+    private Map<String, ValueEventListener> customSettingsListeners = new HashMap<>();
 
     private static final int PICK_IMAGE_REQUEST = 1;
     private static final String TAG = "CreateGroupActivity";
@@ -259,28 +262,18 @@ public class CreateGroupActivity extends AppCompatActivity {
                                 continue;
                             }
 
-                            String userLogin = userSnapshot.child("login").getValue(String.class);
-                            String profileImage = userSnapshot.child("profileImage").getValue(String.class);
-
-                            Log.d(TAG, "loadUsers: User login: " + userLogin + ", profile image: " + profileImage);
-
-                            if (TextUtils.isEmpty(userLogin)) {
-                                Log.d(TAG, "loadUsers: Skipping user with empty login");
+                            // Проверяем наличие валидного логина
+                            if (!hasValidLogin(userSnapshot)) {
+                                Log.d(TAG, "loadUsers: Skipping user without valid login");
                                 continue;
                             }
 
-                            if (profileImage == null) {
-                                profileImage = "";
-                            }
-
-                            usersList.add(new User(userLogin, profileImage));
-                            userIdsList.add(userId);
+                            // ЗАГРУЖАЕМ ПОЛЬЗОВАТЕЛЯ С КАСТОМНЫМИ НАСТРОЙКАМИ
+                            loadUserWithCustomSettings(userId);
                             userCount++;
-                            Log.d(TAG, "loadUsers: Added user: " + userLogin);
                         }
 
-                        Log.d(TAG, "loadUsers: Total users loaded: " + userCount);
-                        usersAdapter.notifyDataSetChanged();
+                        Log.d(TAG, "loadUsers: Total users to load: " + userCount);
                         binding.progressBar.setVisibility(View.GONE);
                         updateSelectedCount();
                     }
@@ -292,6 +285,151 @@ public class CreateGroupActivity extends AppCompatActivity {
                         binding.progressBar.setVisibility(View.GONE);
                     }
                 });
+    }
+
+    // НОВЫЙ МЕТОД: Проверка наличия валидного логина у пользователя
+    private boolean hasValidLogin(DataSnapshot userSnapshot) {
+        // Проверяем различные поля, которые могут содержать логин
+        String login = userSnapshot.child("login").getValue(String.class);
+        String username = userSnapshot.child("username").getValue(String.class);
+        String name = userSnapshot.child("name").getValue(String.class);
+        String displayName = userSnapshot.child("displayName").getValue(String.class);
+        String email = userSnapshot.child("email").getValue(String.class);
+
+        // Если есть хотя бы одно непустое поле с именем/логином
+        if (login != null && !login.trim().isEmpty()) {
+            return true;
+        }
+        if (username != null && !username.trim().isEmpty()) {
+            return true;
+        }
+        if (name != null && !name.trim().isEmpty()) {
+            return true;
+        }
+        if (displayName != null && !displayName.trim().isEmpty()) {
+            return true;
+        }
+        if (email != null && !email.trim().isEmpty()) {
+            return true;
+        }
+
+        // Если все поля пустые, пользователь невалиден
+        return false;
+    }
+
+    // НОВЫЙ МЕТОД: Загрузка пользователя с кастомными настройками
+    private void loadUserWithCustomSettings(String userId) {
+        DatabaseReference customRef = FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                .child(currentUserId)
+                .child("chatContacts")
+                .child(userId);
+
+        ValueEventListener customListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                String customName = null;
+                String customImage = null;
+
+                if (snapshot.exists()) {
+                    customName = snapshot.child("customName").getValue(String.class);
+                    customImage = snapshot.child("customImage").getValue(String.class);
+                    Log.d(TAG, "Found customizations for user " + userId +
+                            ": name=" + customName + ", image=" + customImage);
+                }
+
+                // Загружаем основные данные пользователя с учетом кастомных настроек
+                loadUserBasicData(userId, customName, customImage);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Error loading custom settings for user: " + userId, error.toException());
+                // Если ошибка, загружаем без кастомных настроек
+                loadUserBasicData(userId, null, null);
+            }
+        };
+
+        customSettingsListeners.put(userId, customListener);
+        customRef.addListenerForSingleValueEvent(customListener);
+    }
+
+    // ОБНОВЛЕННЫЙ МЕТОД: Загрузка основных данных с учетом кастомных настроек
+    private void loadUserBasicData(String userId, String customName, String customImage) {
+        FirebaseDatabase.getInstance().getReference("Users")
+                .child(userId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (snapshot.exists()) {
+                            // Проверяем еще раз наличие логина (на всякий случай)
+                            if (!hasValidLogin(snapshot)) {
+                                Log.d(TAG, "Skipping user without login in basic data: " + userId);
+                                return;
+                            }
+
+                            // Используем кастомное имя если есть, иначе берем из профиля
+                            String username = customName != null ? customName : getUsernameFromSnapshot(snapshot);
+
+                            // Используем кастомную аватарку если есть, иначе берем из профиля
+                            String profileImage = customImage != null ? customImage : getProfileImageFromSnapshot(snapshot);
+
+                            User user = new User(username, profileImage);
+                            usersList.add(user);
+                            userIdsList.add(userId);
+
+                            Log.d(TAG, "Added user to list: " + username + " (" + userId + ")" +
+                                    ", Custom: " + (customName != null));
+
+                            usersAdapter.notifyDataSetChanged();
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Log.e(TAG, "Failed to load user details for: " + userId, error.toException());
+                    }
+                });
+    }
+
+    private String getUsernameFromSnapshot(DataSnapshot snapshot) {
+        // Пробуем разные поля для имени пользователя
+        String username = snapshot.child("login").getValue(String.class);
+        if (username == null || username.trim().isEmpty()) {
+            username = snapshot.child("username").getValue(String.class);
+        }
+        if (username == null || username.trim().isEmpty()) {
+            username = snapshot.child("name").getValue(String.class);
+        }
+        if (username == null || username.trim().isEmpty()) {
+            username = snapshot.child("displayName").getValue(String.class);
+        }
+        if (username == null || username.trim().isEmpty()) {
+            String email = snapshot.child("email").getValue(String.class);
+            if (email != null && email.contains("@")) {
+                username = email.substring(0, email.indexOf("@"));
+            } else {
+                username = "User " + snapshot.getKey().substring(0, 6);
+            }
+        }
+        return username;
+    }
+
+    private String getProfileImageFromSnapshot(DataSnapshot snapshot) {
+        // Пробуем разные поля для аватарки
+        String profileImage = snapshot.child("profileImage").getValue(String.class);
+        if (profileImage == null || profileImage.trim().isEmpty()) {
+            profileImage = snapshot.child("photoUrl").getValue(String.class);
+        }
+        if (profileImage == null || profileImage.trim().isEmpty()) {
+            profileImage = snapshot.child("image").getValue(String.class);
+        }
+        if (profileImage == null || profileImage.trim().isEmpty()) {
+            profileImage = snapshot.child("avatar").getValue(String.class);
+        }
+        if (profileImage == null) {
+            profileImage = "";
+        }
+        return profileImage;
     }
 
     private void createGroup() {
@@ -458,6 +596,21 @@ public class CreateGroupActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        // Очищаем кастомные слушатели
+        for (Map.Entry<String, ValueEventListener> entry : customSettingsListeners.entrySet()) {
+            try {
+                FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                        .child(currentUserId)
+                        .child("chatContacts")
+                        .child(entry.getKey())
+                        .removeEventListener(entry.getValue());
+            } catch (Exception e) {
+                Log.e(TAG, "Error removing custom settings listener", e);
+            }
+        }
+        customSettingsListeners.clear();
+
         Log.d(TAG, "onDestroy: Activity destroyed");
         binding = null;
     }
