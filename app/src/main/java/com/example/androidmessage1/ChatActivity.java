@@ -151,17 +151,25 @@ public class ChatActivity extends AppCompatActivity {
             }
         });
 
-        // Добавляем обработчик клика на аватарку пользователя
+        // Добавляем обработчик клика на аватарку пользователя для перехода в настройки профиля
         binding.chatUserAvatar.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                openProfileChatActivity();
+                openProfileSettings();
+            }
+        });
+
+        // Добавляем обработчик клика на имя пользователя для перехода в настройки профиля
+        binding.chatUserName.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openProfileSettings();
             }
         });
     }
 
-    // Метод для открытия ProfileChatActivity
-    private void openProfileChatActivity() {
+    // ДОБАВЛЕННЫЙ МЕТОД: Открытие настроек профиля чата
+    private void openProfileSettings() {
         if (otherUserId != null && chatId != null) {
             Intent intent = new Intent(ChatActivity.this, ProfileChatActivity.class);
             intent.putExtra("otherUserId", otherUserId);
@@ -170,6 +178,11 @@ public class ChatActivity extends AppCompatActivity {
         } else {
             Toast.makeText(this, "Chat data not available", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    // Метод для открытия ProfileChatActivity (оставлен для совместимости)
+    private void openProfileChatActivity() {
+        openProfileSettings();
     }
 
     // ИСПРАВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек из правильного пути

@@ -19,6 +19,7 @@ import com.example.androidmessage1.groups.messages.GroupMessageAdapter;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
@@ -40,9 +41,13 @@ public class GroupChatActivity extends AppCompatActivity {
     private ValueEventListener messagesListener;
     private ValueEventListener groupInfoListener;
     private ValueEventListener onlineUsersListener;
+    private ValueEventListener userRoleListener;
     private String currentUserId;
     private List<String> groupMembers = new ArrayList<>();
     private Set<String> onlineUsers = new HashSet<>();
+    private DatabaseReference groupRef;
+    private boolean isAdmin = false;
+    private boolean isOwner = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,19 +65,77 @@ public class GroupChatActivity extends AppCompatActivity {
             return;
         }
 
+        groupRef = FirebaseDatabase.getInstance().getReference("Groups").child(groupId);
+
         Log.d("GroupChatActivity", "Opening group: " + groupId + ", name: " + groupName);
+        Log.d("GroupChatActivity", "Current user ID: " + currentUserId);
 
         initializeViews();
         loadGroupInfo();
         loadMessages();
         setupOnlineStatus();
         markAllMessagesAsRead();
+        checkUserRole();
 
         binding.sendMessageBtn.setOnClickListener(v -> sendMessage());
         binding.exitBtn.setOnClickListener(v -> finish());
         binding.sendVideoBtn.setOnClickListener(v -> {
             Toast.makeText(GroupChatActivity.this, "Video feature coming soon", Toast.LENGTH_SHORT).show();
         });
+
+        binding.groupImage.setOnClickListener(v -> openGroupSettings());
+        binding.groupName.setOnClickListener(v -> openGroupSettings());
+    }
+
+    private void checkUserRole() {
+        userRoleListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
+                    String role = snapshot.getValue(String.class);
+                    if (role != null) {
+                        if ("owner".equals(role)) {
+                            isOwner = true;
+                            isAdmin = true;
+                            Log.d("GroupChatActivity", "User is OWNER of the group");
+                        } else if ("admin".equals(role)) {
+                            isAdmin = true;
+                            isOwner = false;
+                            Log.d("GroupChatActivity", "User is ADMIN of the group");
+                        } else {
+                            isAdmin = false;
+                            isOwner = false;
+                            Log.d("GroupChatActivity", "User is REGULAR MEMBER of the group");
+                        }
+                    } else {
+                        // Если роль null, считаем обычным участником
+                        isAdmin = false;
+                        isOwner = false;
+                        Log.d("GroupChatActivity", "User role is null, considering as regular member");
+                    }
+                } else {
+                    // Если пользователя нет в members, считаем обычным участником
+                    isAdmin = false;
+                    isOwner = false;
+                    Log.d("GroupChatActivity", "User not found in members, considering as regular member");
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("GroupChatActivity", "Failed to load user role", error.toException());
+            }
+        };
+
+        groupRef.child("members").child(currentUserId).addValueEventListener(userRoleListener);
+    }
+
+    private void openGroupSettings() {
+        Intent intent = new Intent(this, GroupSettingsActivity.class);
+        intent.putExtra("groupId", groupId);
+        intent.putExtra("isAdmin", isAdmin);
+        intent.putExtra("isOwner", isOwner);
+        startActivity(intent);
     }
 
     private void initializeViews() {
@@ -113,18 +176,23 @@ public class GroupChatActivity extends AppCompatActivity {
                         binding.groupImage.setImageResource(R.drawable.artem);
                     }
 
-                    // Загружаем список участников группы
+                    // ТОЧНЫЙ подсчет участников группы
                     groupMembers.clear();
                     DataSnapshot membersSnapshot = snapshot.child("members");
                     if (membersSnapshot.exists()) {
                         for (DataSnapshot memberSnapshot : membersSnapshot.getChildren()) {
-                            String memberId = memberSnapshot.getValue(String.class);
-                            if (memberId != null && !groupMembers.contains(memberId)) {
+                            String memberId = memberSnapshot.getKey();
+                            if (memberId != null) {
                                 groupMembers.add(memberId);
+                                Log.d("GroupChatActivity", "Found member: " + memberId);
                             }
                         }
                         updateMembersCount();
                         loadOnlineMembers();
+                        Log.d("GroupChatActivity", "Total members: " + groupMembers.size());
+                    } else {
+                        Log.w("GroupChatActivity", "No members found in group");
+                        updateMembersCount();
                     }
                 }
             }
@@ -135,30 +203,43 @@ public class GroupChatActivity extends AppCompatActivity {
             }
         };
 
-        FirebaseDatabase.getInstance().getReference("Groups")
-                .child(groupId)
-                .addValueEventListener(groupInfoListener);
+        groupRef.addValueEventListener(groupInfoListener);
+    }
+
+    private void updateMembersCount() {
+        int totalMembers = groupMembers.size();
+        String membersText = totalMembers + " member" + (totalMembers != 1 ? "s" : "");
+        binding.membersCount.setText(membersText);
+        Log.d("GroupChatActivity", "Updated members count: " + membersText);
     }
 
     private void setupOnlineStatus() {
-        // Устанавливаем текущего пользователя онлайн
         if (currentUserId != null) {
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
                     .child("isOnline")
                     .setValue(true);
 
-            // Устанавливаем слушатель для удаления онлайн статуса при выходе
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("lastOnline")
+                    .setValue(System.currentTimeMillis());
+
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
                     .child("isOnline")
                     .onDisconnect()
                     .setValue(false);
+
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("lastOnline")
+                    .onDisconnect()
+                    .setValue(System.currentTimeMillis());
         }
     }
 
     private void loadOnlineMembers() {
-        // Очищаем предыдущий слушатель
         if (onlineUsersListener != null) {
             FirebaseDatabase.getInstance().getReference("Users")
                     .removeEventListener(onlineUsersListener);
@@ -193,14 +274,8 @@ public class GroupChatActivity extends AppCompatActivity {
             }
         };
 
-        // Слушаем изменения статуса всех пользователей
         FirebaseDatabase.getInstance().getReference("Users")
                 .addValueEventListener(onlineUsersListener);
-    }
-
-    private void updateMembersCount() {
-        int totalMembers = groupMembers.size();
-        binding.membersCount.setText(totalMembers + " member" + (totalMembers > 1 ? "s" : ""));
     }
 
     private void updateOnlineCount(int onlineCount) {
@@ -215,11 +290,7 @@ public class GroupChatActivity extends AppCompatActivity {
 
     private void loadMessages() {
         if (messagesListener != null) {
-            FirebaseDatabase.getInstance()
-                    .getReference("Groups")
-                    .child(groupId)
-                    .child("messages")
-                    .removeEventListener(messagesListener);
+            groupRef.child("messages").removeEventListener(messagesListener);
         }
 
         messagesListener = new ValueEventListener() {
@@ -250,7 +321,6 @@ public class GroupChatActivity extends AppCompatActivity {
 
                             messages.add(message);
 
-                            // Автоматически помечаем входящие сообщения как прочитанные при загрузке
                             if (!ownerId.equals(currentUserId) && (isRead == null || !isRead)) {
                                 markSingleMessageAsRead(messageId);
                             }
@@ -260,8 +330,6 @@ public class GroupChatActivity extends AppCompatActivity {
 
                 messageAdapter.notifyDataSetChanged();
                 scrollToBottom();
-
-                Log.d("GroupChatActivity", "Loaded " + messages.size() + " messages");
             }
 
             @Override
@@ -271,14 +339,9 @@ public class GroupChatActivity extends AppCompatActivity {
             }
         };
 
-        FirebaseDatabase.getInstance()
-                .getReference("Groups")
-                .child(groupId)
-                .child("messages")
-                .addValueEventListener(messagesListener);
+        groupRef.child("messages").addValueEventListener(messagesListener);
     }
 
-    // ВАЖНО: Исправленный метод отправки сообщения
     private void sendMessage() {
         String messageText = binding.messageEt.getText().toString().trim();
         if (messageText.isEmpty()) {
@@ -291,19 +354,18 @@ public class GroupChatActivity extends AppCompatActivity {
 
         binding.messageEt.setText("");
 
-        String messageKey = FirebaseDatabase.getInstance()
-                .getReference("Groups")
-                .child(groupId)
-                .child("messages")
-                .push()
-                .getKey();
+        final String finalMessageText = messageText;
+        final String finalDate = date;
+
+        String messageKey = groupRef.child("messages").push().getKey();
 
         if (messageKey == null) {
             Toast.makeText(this, "Error creating message", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Получаем информацию о текущем пользователе
+        final String finalMessageKey = messageKey;
+
         FirebaseDatabase.getInstance().getReference("Users")
                 .child(currentUserId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
@@ -329,52 +391,44 @@ public class GroupChatActivity extends AppCompatActivity {
                             }
                         }
 
-                        // ВАЖНО: При отправке сообщения устанавливаем isRead = false
-                        // Каждый пользователь сам отметит сообщение как прочитанное когда откроет чат
+                        final String finalCurrentUserName = currentUserName;
+                        final String finalCurrentUserAvatar = currentUserAvatar;
+
                         HashMap<String, Object> messageInfo = new HashMap<>();
-                        messageInfo.put("text", messageText);
+                        messageInfo.put("text", finalMessageText);
                         messageInfo.put("ownerId", currentUserId);
-                        messageInfo.put("senderName", currentUserName);
-                        messageInfo.put("senderAvatar", currentUserAvatar);
-                        messageInfo.put("date", date);
+                        messageInfo.put("senderName", finalCurrentUserName);
+                        messageInfo.put("senderAvatar", finalCurrentUserAvatar);
+                        messageInfo.put("date", finalDate);
                         messageInfo.put("timestamp", System.currentTimeMillis());
-                        messageInfo.put("isRead", false); // ВАЖНО: сообщение непрочитанное для всех
+                        messageInfo.put("isRead", false);
 
                         HashMap<String, Object> updates = new HashMap<>();
-                        updates.put("Groups/" + groupId + "/messages/" + messageKey, messageInfo);
-                        updates.put("Groups/" + groupId + "/lastMessage", messageText);
-                        updates.put("Groups/" + groupId + "/lastMessageSender", currentUserName);
+                        updates.put("Groups/" + groupId + "/messages/" + finalMessageKey, messageInfo);
+                        updates.put("Groups/" + groupId + "/lastMessage", finalMessageText);
+                        updates.put("Groups/" + groupId + "/lastMessageSender", finalCurrentUserName);
                         updates.put("Groups/" + groupId + "/lastMessageTime", System.currentTimeMillis());
 
                         FirebaseDatabase.getInstance().getReference()
-                                .updateChildren(updates)
-                                .addOnCompleteListener(task -> {
-                                    if (!task.isSuccessful()) {
-                                        Log.e("GroupChatActivity", "Send error: " + task.getException());
-                                        Toast.makeText(GroupChatActivity.this, "Send error", Toast.LENGTH_SHORT).show();
-                                    } else {
-                                        Log.d("GroupChatActivity", "Group message sent with isRead = false");
-                                    }
-                                });
+                                .updateChildren(updates);
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
                         Log.e("GroupChatActivity", "Failed to load user info", error.toException());
-                        sendBasicMessage(messageText, date, messageKey);
+                        sendBasicMessage(finalMessageText, finalDate, finalMessageKey);
                     }
                 });
     }
 
     private void sendBasicMessage(String messageText, String date, String messageKey) {
-        // ВАЖНО: При отправке сообщения устанавливаем isRead = false
         HashMap<String, Object> messageInfo = new HashMap<>();
         messageInfo.put("text", messageText);
         messageInfo.put("ownerId", currentUserId);
         messageInfo.put("senderName", "User");
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
-        messageInfo.put("isRead", false); // ВАЖНО: сообщение непрочитанное для всех
+        messageInfo.put("isRead", false);
 
         HashMap<String, Object> updates = new HashMap<>();
         updates.put("Groups/" + groupId + "/messages/" + messageKey, messageInfo);
@@ -383,12 +437,7 @@ public class GroupChatActivity extends AppCompatActivity {
         updates.put("Groups/" + groupId + "/lastMessageTime", System.currentTimeMillis());
 
         FirebaseDatabase.getInstance().getReference()
-                .updateChildren(updates)
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        Log.d("GroupChatActivity", "Basic group message sent with isRead = false");
-                    }
-                });
+                .updateChildren(updates);
     }
 
     private void scrollToBottom() {
@@ -397,18 +446,10 @@ public class GroupChatActivity extends AppCompatActivity {
         }
     }
 
-    // ВАЖНО: Метод для отметки всех сообщений как прочитанных
     private void markAllMessagesAsRead() {
-        if (groupId == null) {
-            Log.e("GroupChatActivity", "groupId is null");
-            return;
-        }
+        if (groupId == null) return;
 
-        Log.d("GroupChatActivity", "Marking all group messages as read in group: " + groupId);
-
-        FirebaseDatabase.getInstance().getReference("Groups")
-                .child(groupId)
-                .child("messages")
+        groupRef.child("messages")
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
@@ -420,61 +461,39 @@ public class GroupChatActivity extends AppCompatActivity {
                             String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
                             Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
 
-                            // Отмечаем как прочитанные сообщения от других пользователей, которые еще не прочитаны
                             if (messageId != null && ownerId != null &&
                                     !ownerId.equals(currentUserId) &&
                                     (isRead == null || !isRead)) {
 
                                 updates.put("Groups/" + groupId + "/messages/" + messageId + "/isRead", true);
                                 markedAsRead[0]++;
-                                Log.d("GroupChatActivity", "Marking group message as read: " + messageId);
                             }
                         }
 
                         if (!updates.isEmpty()) {
                             FirebaseDatabase.getInstance().getReference()
-                                    .updateChildren(updates)
-                                    .addOnCompleteListener(task -> {
-                                        if (task.isSuccessful()) {
-                                            Log.d("GroupChatActivity", "Successfully marked " + markedAsRead[0] + " group messages as read");
-                                        } else {
-                                            Log.e("GroupChatActivity", "Failed to mark group messages as read", task.getException());
-                                        }
-                                    });
+                                    .updateChildren(updates);
                         }
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
-                        Log.e("GroupChatActivity", "Failed to mark group messages as read", error.toException());
+                        Log.e("GroupChatActivity", "Failed to mark messages as read", error.toException());
                     }
                 });
     }
 
     private void markSingleMessageAsRead(String messageId) {
-        FirebaseDatabase.getInstance().getReference("Groups")
-                .child(groupId)
-                .child("messages")
-                .child(messageId)
-                .child("isRead")
-                .setValue(true)
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        Log.d("GroupChatActivity", "Group message marked as read: " + messageId);
-                    } else {
-                        Log.e("GroupChatActivity", "Failed to mark group message as read: " + messageId);
-                    }
-                });
+        groupRef.child("messages").child(messageId).child("isRead").setValue(true);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        setupOnlineStatus();
         if (groupId != null) {
             markAllMessagesAsRead();
         }
-        // Обновляем онлайн статус при возвращении в приложение
-        setupOnlineStatus();
     }
 
     @Override
@@ -486,46 +505,32 @@ public class GroupChatActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onStop() {
-        super.onStop();
-        if (groupId != null) {
-            markAllMessagesAsRead();
-        }
-    }
-
-    @Override
     protected void onDestroy() {
         super.onDestroy();
 
-        // Очищаем onDisconnect при выходе
+        if (messagesListener != null && groupId != null) {
+            groupRef.child("messages").removeEventListener(messagesListener);
+        }
+
+        if (groupInfoListener != null && groupId != null) {
+            groupRef.removeEventListener(groupInfoListener);
+        }
+
+        if (onlineUsersListener != null) {
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .removeEventListener(onlineUsersListener);
+        }
+
+        if (userRoleListener != null && groupId != null) {
+            groupRef.child("members").child(currentUserId).removeEventListener(userRoleListener);
+        }
+
         if (currentUserId != null) {
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
                     .child("isOnline")
                     .onDisconnect()
                     .cancel();
-        }
-
-        // Очищаем слушатели
-        if (messagesListener != null && groupId != null) {
-            FirebaseDatabase.getInstance()
-                    .getReference("Groups")
-                    .child(groupId)
-                    .child("messages")
-                    .removeEventListener(messagesListener);
-        }
-
-        if (groupInfoListener != null && groupId != null) {
-            FirebaseDatabase.getInstance()
-                    .getReference("Groups")
-                    .child(groupId)
-                    .removeEventListener(groupInfoListener);
-        }
-
-        if (onlineUsersListener != null) {
-            FirebaseDatabase.getInstance()
-                    .getReference("Users")
-                    .removeEventListener(onlineUsersListener);
         }
     }
 }

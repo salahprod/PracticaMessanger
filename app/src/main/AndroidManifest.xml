@@ -3,6 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+
 
     <application
         android:allowBackup="true"
@@ -26,10 +30,22 @@
 
         <activity android:name=".ProfileChatActivity" />
 
+
         <activity
             android:name=".groups.GroupChatActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity" />
+
+        <activity
+            android:name=".groups.GroupSettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".groups.GroupChatActivity" />
+
+        <activity
+            android:name=".groups.AddMembersActivity"
+            android:exported="false"
+            android:parentActivityName=".groups.GroupSettingsActivity" />
+
         <activity
             android:name=".RegisterActivity"
             android:exported="false" /> <!-- Сделайте LoginActivity запускаемой -->

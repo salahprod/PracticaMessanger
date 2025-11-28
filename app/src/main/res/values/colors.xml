@@ -5,4 +5,5 @@
     <color name="white">#FFFFFFFF</color>
     <color name="blue_oval_color">#FF2196F3</color>
     <color name="online_green">#FF4CAF50</color>
+    <color name="selected_item_color">#E8F5E8</color>
 </resources>
