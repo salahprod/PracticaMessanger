@@ -1,5 +1,6 @@
 package com.example.androidmessage1.groups.messages;
 
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -11,6 +12,10 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.Glide;
 import com.example.androidmessage1.R;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 
 import java.util.List;
 
@@ -20,12 +25,14 @@ public class GroupMessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
 
     private List<GroupMessage> messages;
     private String currentUserId;
+    private String groupId;
 
     private static final int TYPE_MY_MESSAGE = 1;
     private static final int TYPE_OTHER_MESSAGE = 2;
 
-    public GroupMessageAdapter(List<GroupMessage> messages){
+    public GroupMessageAdapter(List<GroupMessage> messages, String groupId){
         this.messages = messages;
+        this.groupId = groupId;
         this.currentUserId = FirebaseAuth.getInstance().getCurrentUser() != null
                 ? FirebaseAuth.getInstance().getCurrentUser().getUid()
                 : "";
@@ -61,23 +68,9 @@ public class GroupMessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             otherHolder.messageTv.setText(message.getText());
             otherHolder.dateTv.setText(message.getDate());
 
-            // Устанавливаем имя отправителя
-            if (message.getSenderName() != null && !message.getSenderName().isEmpty()) {
-                otherHolder.senderNameTv.setText(message.getSenderName());
-            } else {
-                otherHolder.senderNameTv.setText("User");
-            }
-
-            // Загружаем аватарку
-            if (message.getSenderAvatar() != null && !message.getSenderAvatar().isEmpty()) {
-                Glide.with(otherHolder.itemView.getContext())
-                        .load(message.getSenderAvatar())
-                        .placeholder(R.drawable.artem)
-                        .error(R.drawable.artem)
-                        .into(otherHolder.senderAvatarIv);
-            } else {
-                otherHolder.senderAvatarIv.setImageResource(R.drawable.artem);
-            }
+            // Загружаем данные отправителя с учетом кастомных настроек
+            loadSenderDataWithCustomSettings(message.getOwnerId(), message.getSenderName(),
+                    message.getSenderAvatar(), otherHolder);
 
             // Логика отображения аватарки и имени
             boolean showAvatarAndName = shouldShowAvatarAndName(position);
@@ -90,6 +83,93 @@ public class GroupMessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
                 otherHolder.senderNameTv.setVisibility(View.GONE);
             }
         }
+    }
+
+    // Метод для загрузки данных отправителя с учетом кастомных настроек
+    private void loadSenderDataWithCustomSettings(String senderId, String originalSenderName,
+                                                  String originalSenderAvatar, OtherMessageViewHolder holder) {
+        if (senderId == null) {
+            holder.senderNameTv.setText("User");
+            holder.senderAvatarIv.setImageResource(R.drawable.artem);
+            return;
+        }
+
+        // Сначала проверяем кастомные настройки
+        FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                .child(currentUserId)
+                .child("chatContacts")
+                .child(senderId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot customSnapshot) {
+                        // Используем final переменные для хранения данных
+                        final String[] customName = {null};
+                        final String[] customAvatar = {null};
+
+                        if (customSnapshot.exists()) {
+                            customName[0] = customSnapshot.child("customName").getValue(String.class);
+                            customAvatar[0] = customSnapshot.child("customImage").getValue(String.class);
+                            Log.d("GroupMessageAdapter", "Custom settings found for sender " + senderId +
+                                    ": name=" + customName[0] + ", avatar=" + customAvatar[0]);
+                        }
+
+                        // Применяем кастомные настройки
+                        String displayName;
+                        String displayAvatar;
+
+                        if (customName[0] != null && !customName[0].isEmpty()) {
+                            displayName = customName[0];
+                            Log.d("GroupMessageAdapter", "Using CUSTOM name for sender: " + customName[0]);
+                        } else if (originalSenderName != null && !originalSenderName.isEmpty()) {
+                            displayName = originalSenderName;
+                            Log.d("GroupMessageAdapter", "Using ORIGINAL name for sender: " + originalSenderName);
+                        } else {
+                            displayName = "User";
+                            Log.d("GroupMessageAdapter", "Using DEFAULT name for sender");
+                        }
+
+                        if (customAvatar[0] != null && !customAvatar[0].isEmpty()) {
+                            displayAvatar = customAvatar[0];
+                            Log.d("GroupMessageAdapter", "Using CUSTOM avatar for sender: " + customAvatar[0]);
+                        } else if (originalSenderAvatar != null && !originalSenderAvatar.isEmpty()) {
+                            displayAvatar = originalSenderAvatar;
+                            Log.d("GroupMessageAdapter", "Using ORIGINAL avatar for sender: " + originalSenderAvatar);
+                        } else {
+                            displayAvatar = "";
+                            Log.d("GroupMessageAdapter", "Using DEFAULT avatar for sender");
+                        }
+
+                        // Обновляем UI
+                        holder.senderNameTv.setText(displayName);
+
+                        if (displayAvatar != null && !displayAvatar.isEmpty()) {
+                            Glide.with(holder.itemView.getContext())
+                                    .load(displayAvatar)
+                                    .placeholder(R.drawable.artem)
+                                    .error(R.drawable.artem)
+                                    .into(holder.senderAvatarIv);
+                        } else {
+                            holder.senderAvatarIv.setImageResource(R.drawable.artem);
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Log.e("GroupMessageAdapter", "Failed to load custom settings for sender: " + senderId, error.toException());
+                        // При ошибке используем оригинальные данные
+                        holder.senderNameTv.setText(originalSenderName != null ? originalSenderName : "User");
+
+                        if (originalSenderAvatar != null && !originalSenderAvatar.isEmpty()) {
+                            Glide.with(holder.itemView.getContext())
+                                    .load(originalSenderAvatar)
+                                    .placeholder(R.drawable.artem)
+                                    .error(R.drawable.artem)
+                                    .into(holder.senderAvatarIv);
+                        } else {
+                            holder.senderAvatarIv.setImageResource(R.drawable.artem);
+                        }
+                    }
+                });
     }
 
     @Override

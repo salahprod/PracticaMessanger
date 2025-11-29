@@ -13,7 +13,6 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.DividerItemDecoration;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.androidmessage1.chats.Chat;
 import com.example.androidmessage1.chats.ChatsAdapter;
@@ -40,6 +39,7 @@ public class FragmentChat extends Fragment {
     private Map<String, ValueEventListener> chatListeners = new HashMap<>();
     private Map<String, ValueEventListener> groupListeners = new HashMap<>();
     private Map<String, ValueEventListener> customSettingsListeners = new HashMap<>();
+    private Map<String, ValueEventListener> groupCustomSettingsListeners = new HashMap<>();
     private ValueEventListener chatsListListener;
     private ValueEventListener groupsListListener;
     private String currentUserId;
@@ -264,6 +264,13 @@ public class FragmentChat extends Fragment {
     private void setupGroupListener(String groupId) {
         if (isFragmentDestroyed) return;
 
+        // Удаляем предыдущий слушатель если есть
+        if (groupListeners.containsKey(groupId)) {
+            FirebaseDatabase.getInstance().getReference("Groups")
+                    .child(groupId)
+                    .removeEventListener(groupListeners.get(groupId));
+        }
+
         ValueEventListener groupListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot groupSnapshot) {
@@ -272,7 +279,8 @@ public class FragmentChat extends Fragment {
                 try {
                     Group group = groupSnapshot.getValue(Group.class);
                     if (group != null && group.getMembers() != null && group.getMembers().contains(currentUserId)) {
-                        updateOrAddGroupWithMicroUpdate(group);
+                        // Загружаем кастомные настройки для группы
+                        loadGroupCustomSettings(groupId, group);
                     } else {
                         removeGroup(groupId);
                     }
@@ -293,14 +301,112 @@ public class FragmentChat extends Fragment {
                 .addValueEventListener(groupListener);
     }
 
-    // НОВЫЙ МЕТОД: Обновление группы с микрообновлением
-    private void updateOrAddGroupWithMicroUpdate(Group newGroup) {
+    // МЕТОД: Загрузка кастомных настроек для групп
+    private void loadGroupCustomSettings(String groupId, Group group) {
         if (isFragmentDestroyed) return;
 
-        String groupId = newGroup.getGroupId();
-        String newGroupImage = newGroup.getGroupImage() != null ? newGroup.getGroupImage() : "";
-        String newGroupName = newGroup.getGroupName() != null ? newGroup.getGroupName() : "";
-        String newLastMessage = formatGroupLastMessage(newGroup);
+        // Удаляем предыдущий слушатель если есть
+        if (groupCustomSettingsListeners.containsKey(groupId)) {
+            FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                    .child(currentUserId)
+                    .child("groupContacts")
+                    .child(groupId)
+                    .removeEventListener(groupCustomSettingsListeners.get(groupId));
+        }
+
+        ValueEventListener groupCustomSettingsListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (isFragmentDestroyed || binding == null) return;
+
+                String customName = null;
+                String customImage = null;
+
+                if (snapshot.exists()) {
+                    customName = snapshot.child("customName").getValue(String.class);
+                    customImage = snapshot.child("customImage").getValue(String.class);
+
+                    Log.d("FragmentChat", "Group custom settings UPDATED for " + groupId +
+                            ": name=" + customName + ", image=" + customImage);
+                } else {
+                    Log.d("FragmentChat", "No custom settings found for group: " + groupId);
+                }
+
+                // Создаем чат группы с учетом кастомных настроек
+                createGroupChatWithCustomSettings(groupId, group, customName, customImage);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("FragmentChat", "Failed to load group custom settings for: " + groupId, error.toException());
+                // При ошибке создаем группу без кастомных настроек
+                createGroupChatWithCustomSettings(groupId, group, null, null);
+            }
+        };
+
+        groupCustomSettingsListeners.put(groupId, groupCustomSettingsListener);
+        FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                .child(currentUserId)
+                .child("groupContacts")
+                .child(groupId)
+                .addValueEventListener(groupCustomSettingsListener);
+
+        Log.d("FragmentChat", "Group custom settings listener SETUP for: " + groupId);
+    }
+
+    // МЕТОД: Создание чата группы с учетом кастомных настроек
+    private void createGroupChatWithCustomSettings(String groupId, Group group, String customName, String customImage) {
+        if (isFragmentDestroyed) return;
+
+        String originalGroupName = group.getGroupName() != null ? group.getGroupName() : "";
+        String originalGroupImage = group.getGroupImage() != null ? group.getGroupImage() : "";
+        String newLastMessage = formatGroupLastMessage(group);
+
+        // ВАЖНО: Применяем кастомные настройки для групп
+        // Имя: кастомное имя имеет приоритет над оригинальным
+        String displayGroupName;
+        if (customName != null && !customName.isEmpty()) {
+            displayGroupName = customName;
+            Log.d("FragmentChat", "Using CUSTOM group name: " + customName + " for group: " + groupId);
+        } else {
+            displayGroupName = originalGroupName;
+            Log.d("FragmentChat", "Using ORIGINAL group name: " + originalGroupName + " for group: " + groupId);
+        }
+
+        // Аватарка: кастомная аватарка имеет приоритет над оригинальной
+        String displayGroupImage;
+        if (customImage != null && !customImage.isEmpty()) {
+            displayGroupImage = customImage;
+            Log.d("FragmentChat", "Using CUSTOM group image: " + customImage + " for group: " + groupId);
+        } else {
+            displayGroupImage = originalGroupImage;
+            Log.d("FragmentChat", "Using ORIGINAL group image: " + originalGroupImage + " for group: " + groupId);
+        }
+
+        Chat groupChat = new Chat(
+                groupId,
+                "group",
+                currentUserId,
+                displayGroupName
+        );
+        groupChat.setLastMessage(newLastMessage);
+        groupChat.setLastMessageTime(String.valueOf(group.getLastMessageTime()));
+        groupChat.setLastMessageTimestamp(group.getLastMessageTime());
+        groupChat.setUnreadCount(0);
+        groupChat.setGroup(true);
+        groupChat.setProfileImage(displayGroupImage);
+
+        updateOrAddGroupWithMicroUpdate(groupChat, originalGroupName, originalGroupImage, newLastMessage);
+    }
+
+    // МЕТОД: Обновление группы с микрообновлением
+    private void updateOrAddGroupWithMicroUpdate(Chat groupChat, String originalGroupName,
+                                                 String originalGroupImage, String newLastMessage) {
+        if (isFragmentDestroyed) return;
+
+        String groupId = groupChat.getChat_id();
+        String newGroupImage = groupChat.getProfileImage() != null ? groupChat.getProfileImage() : "";
+        String newGroupName = groupChat.getChat_name() != null ? groupChat.getChat_name() : "";
 
         int existingIndex = -1;
 
@@ -312,8 +418,6 @@ public class FragmentChat extends Fragment {
                 break;
             }
         }
-
-        Chat groupChat = createGroupChat(newGroup);
 
         boolean needsUpdate = false;
 
@@ -327,8 +431,10 @@ public class FragmentChat extends Fragment {
                     previousName == null || !previousName.equals(newGroupName) ||
                     previousMessage == null || !previousMessage.equals(newLastMessage)) {
                 needsUpdate = true;
-                Log.d("FragmentChat", "Group data changed: " + newGroupName +
+                Log.d("FragmentChat", "Group data CHANGED: " + newGroupName +
                         ", image: " + newGroupImage + ", message: " + newLastMessage);
+            } else {
+                Log.d("FragmentChat", "Group data UNCHANGED: " + newGroupName);
             }
 
             combinedChats.set(existingIndex, groupChat);
@@ -336,10 +442,12 @@ public class FragmentChat extends Fragment {
             if (needsUpdate) {
                 // Микрообновление только этого элемента
                 updateSingleItem(existingIndex);
+                Log.d("FragmentChat", "Group UI UPDATED at position: " + existingIndex);
             }
         } else {
             combinedChats.add(groupChat);
             needsUpdate = true;
+            Log.d("FragmentChat", "New group ADDED: " + newGroupName);
         }
 
         // Сохраняем текущие данные для будущих сравнений
@@ -351,22 +459,6 @@ public class FragmentChat extends Fragment {
         if (existingIndex == -1 || needsUpdate) {
             sortChats();
         }
-    }
-
-    private Chat createGroupChat(Group group) {
-        Chat groupChat = new Chat(
-                group.getGroupId(),
-                "group",
-                currentUserId,
-                group.getGroupName()
-        );
-        groupChat.setLastMessage(formatGroupLastMessage(group));
-        groupChat.setLastMessageTime(String.valueOf(group.getLastMessageTime()));
-        groupChat.setLastMessageTimestamp(group.getLastMessageTime());
-        groupChat.setUnreadCount(0);
-        groupChat.setGroup(true);
-        groupChat.setProfileImage(group.getGroupImage() != null ? group.getGroupImage() : "");
-        return groupChat;
     }
 
     private String formatGroupLastMessage(Group group) {
@@ -412,9 +504,22 @@ public class FragmentChat extends Fragment {
                 previousGroupImages.remove(groupId);
                 previousGroupNames.remove(groupId);
                 previousLastMessages.remove(groupId);
+
+                // Удаляем слушатель кастомных настроек
+                if (groupCustomSettingsListeners.containsKey(groupId)) {
+                    FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                            .child(currentUserId)
+                            .child("groupContacts")
+                            .child(groupId)
+                            .removeEventListener(groupCustomSettingsListeners.get(groupId));
+                    groupCustomSettingsListeners.remove(groupId);
+                    Log.d("FragmentChat", "Removed group custom settings listener for: " + groupId);
+                }
+
                 if (chatsAdapter != null) {
                     chatsAdapter.notifyItemRemoved(i);
                 }
+                Log.d("FragmentChat", "Group REMOVED: " + groupId);
                 break;
             }
         }
@@ -422,6 +527,13 @@ public class FragmentChat extends Fragment {
 
     private void setupChatListener(String chatId, String otherUserId) {
         if (isFragmentDestroyed) return;
+
+        // Удаляем предыдущий слушатель если есть
+        if (chatListeners.containsKey(chatId)) {
+            FirebaseDatabase.getInstance().getReference("Chats")
+                    .child(chatId)
+                    .removeEventListener(chatListeners.get(chatId));
+        }
 
         ValueEventListener chatListener = new ValueEventListener() {
             @Override
@@ -454,9 +566,11 @@ public class FragmentChat extends Fragment {
         chatListeners.put(chatId, chatListener);
         FirebaseDatabase.getInstance().getReference("Chats").child(chatId)
                 .addValueEventListener(chatListener);
+
+        Log.d("FragmentChat", "Chat listener SETUP for: " + chatId);
     }
 
-    // ОБНОВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек с микрообновлением
+    // МЕТОД: Загрузка кастомных настроек с микрообновлением
     private void loadCustomSettings(String otherUserId, String chatId, String lastMessage, long lastMessageTime) {
         if (isFragmentDestroyed) return;
 
@@ -474,26 +588,28 @@ public class FragmentChat extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (isFragmentDestroyed || binding == null) return;
 
-                if (snapshot.exists()) {
-                    String customName = snapshot.child("customName").getValue(String.class);
-                    String customImage = snapshot.child("customImage").getValue(String.class);
+                String customName = null;
+                String customImage = null;
 
-                    // Если есть кастомная аватарка, используем её и не загружаем оригинальные данные
-                    if (customImage != null && !customImage.isEmpty()) {
-                        createChatWithCustomData(chatId, otherUserId, lastMessage, lastMessageTime, customName, customImage);
-                        return;
-                    }
+                if (snapshot.exists()) {
+                    customName = snapshot.child("customName").getValue(String.class);
+                    customImage = snapshot.child("customImage").getValue(String.class);
+
+                    Log.d("FragmentChat", "User custom settings UPDATED for " + otherUserId +
+                            ": name=" + customName + ", image=" + customImage);
+                } else {
+                    Log.d("FragmentChat", "No custom settings found for user: " + otherUserId);
                 }
 
-                // Если кастомной аватарки нет, загружаем оригинальные данные
-                loadOriginalUserData(chatId, otherUserId, lastMessage, lastMessageTime);
+                // ВАЖНО: Всегда загружаем оригинальные данные, но передаем кастомные настройки
+                loadOriginalUserData(chatId, otherUserId, lastMessage, lastMessageTime, customName, customImage);
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 Log.e("FragmentChat", "Failed to load custom settings for user: " + otherUserId, error.toException());
-                // При ошибке загружаем оригинальные данные
-                loadOriginalUserData(chatId, otherUserId, lastMessage, lastMessageTime);
+                // При ошибке загружаем оригинальные данные без кастомных настроек
+                loadOriginalUserData(chatId, otherUserId, lastMessage, lastMessageTime, null, null);
             }
         };
 
@@ -503,9 +619,13 @@ public class FragmentChat extends Fragment {
                 .child("chatContacts")
                 .child(otherUserId)
                 .addValueEventListener(customSettingsListener);
+
+        Log.d("FragmentChat", "User custom settings listener SETUP for: " + otherUserId);
     }
 
-    private void loadOriginalUserData(String chatId, String otherUserId, String lastMessage, long lastMessageTime) {
+    // МЕТОД: Загрузка оригинальных данных пользователя с учетом кастомных настроек
+    private void loadOriginalUserData(String chatId, String otherUserId, String lastMessage,
+                                      long lastMessageTime, String customName, String customImage) {
         FirebaseDatabase.getInstance().getReference("Users").child(otherUserId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
@@ -514,19 +634,42 @@ public class FragmentChat extends Fragment {
 
                         String chatName = "Unknown User";
                         String profileImage = "";
+
                         if (userSnapshot.exists()) {
                             try {
-                                chatName = userSnapshot.child("login").getValue(String.class);
-                                if (chatName == null || chatName.trim().isEmpty()) {
+                                // Получаем оригинальные данные
+                                String originalName = userSnapshot.child("login").getValue(String.class);
+                                if (originalName == null || originalName.trim().isEmpty()) {
                                     String email = userSnapshot.child("email").getValue(String.class);
                                     if (email != null && email.contains("@")) {
-                                        chatName = email.substring(0, email.indexOf("@"));
+                                        originalName = email.substring(0, email.indexOf("@"));
                                     } else {
-                                        chatName = "User";
+                                        originalName = "User";
                                     }
                                 }
-                                profileImage = userSnapshot.child("profileImage").getValue(String.class);
-                                if (profileImage == null) profileImage = "";
+
+                                String originalImage = userSnapshot.child("profileImage").getValue(String.class);
+                                if (originalImage == null) originalImage = "";
+
+                                // ВАЖНО: Применяем кастомные настройки если они есть
+                                // Имя: кастомное имя имеет приоритет над оригинальным
+                                if (customName != null && !customName.isEmpty()) {
+                                    chatName = customName;
+                                    Log.d("FragmentChat", "Using CUSTOM name: " + customName + " for user: " + otherUserId);
+                                } else {
+                                    chatName = originalName;
+                                    Log.d("FragmentChat", "Using ORIGINAL name: " + originalName + " for user: " + otherUserId);
+                                }
+
+                                // Аватарка: кастомная аватарка имеет приоритет над оригинальной
+                                if (customImage != null && !customImage.isEmpty()) {
+                                    profileImage = customImage;
+                                    Log.d("FragmentChat", "Using CUSTOM image: " + customImage + " for user: " + otherUserId);
+                                } else {
+                                    profileImage = originalImage;
+                                    Log.d("FragmentChat", "Using ORIGINAL image: " + originalImage + " for user: " + otherUserId);
+                                }
+
                             } catch (Exception e) {
                                 Log.e("FragmentChat", "Error parsing user data", e);
                                 chatName = "User";
@@ -552,22 +695,7 @@ public class FragmentChat extends Fragment {
                 });
     }
 
-    private void createChatWithCustomData(String chatId, String otherUserId, String lastMessage, long lastMessageTime, String customName, String customImage) {
-        String chatName = customName != null && !customName.isEmpty() ? customName : "User";
-        String profileImage = customImage != null && !customImage.isEmpty() ? customImage : "";
-
-        Chat chat = new Chat(chatId, otherUserId, currentUserId, chatName);
-        chat.setLastMessage(lastMessage != null ? lastMessage : "");
-        chat.setLastMessageTime(String.valueOf(lastMessageTime));
-        chat.setLastMessageTimestamp(lastMessageTime);
-        chat.setUnreadCount(0);
-        chat.setGroup(false);
-        chat.setProfileImage(profileImage);
-
-        updateOrAddChatWithMicroUpdate(chat);
-    }
-
-    // НОВЫЙ МЕТОД: Обновление чата с микрообновлением
+    // МЕТОД: Обновление чата с микрообновлением
     private void updateOrAddChatWithMicroUpdate(Chat newChat) {
         if (isFragmentDestroyed) return;
 
@@ -598,8 +726,10 @@ public class FragmentChat extends Fragment {
                     previousImage == null || !previousImage.equals(newProfileImage) ||
                     previousMessage == null || !previousMessage.equals(newLastMessage)) {
                 needsUpdate = true;
-                Log.d("FragmentChat", "Chat data changed: " + newChatName +
+                Log.d("FragmentChat", "Chat data CHANGED: " + newChatName +
                         ", image: " + newProfileImage + ", message: " + newLastMessage);
+            } else {
+                Log.d("FragmentChat", "Chat data UNCHANGED: " + newChatName);
             }
 
             combinedChats.set(existingIndex, newChat);
@@ -607,10 +737,12 @@ public class FragmentChat extends Fragment {
             if (needsUpdate) {
                 // Микрообновление только этого элемента
                 updateSingleItem(existingIndex);
+                Log.d("FragmentChat", "Chat UI UPDATED at position: " + existingIndex);
             }
         } else {
             combinedChats.add(newChat);
             needsUpdate = true;
+            Log.d("FragmentChat", "New chat ADDED: " + newChatName);
         }
 
         // Сохраняем текущие данные для будущих сравнений
@@ -669,7 +801,11 @@ public class FragmentChat extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        Log.d("FragmentChat", "Fragment resumed");
+        Log.d("FragmentChat", "Fragment resumed - forcing refresh");
+        // При возвращении на фрагмент принудительно обновляем данные
+        if (chatsAdapter != null) {
+            chatsAdapter.notifyDataSetChanged();
+        }
     }
 
     @Override
@@ -729,13 +865,24 @@ public class FragmentChat extends Fragment {
             }
         }
 
+        for (Map.Entry<String, ValueEventListener> entry : groupCustomSettingsListeners.entrySet()) {
+            try {
+                FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                        .child(currentUserId)
+                        .child("groupContacts")
+                        .child(entry.getKey())
+                        .removeEventListener(entry.getValue());
+            } catch (Exception e) {
+                Log.e("FragmentChat", "Error removing group custom settings listener", e);
+            }
+        }
+
         chatListeners.clear();
         groupListeners.clear();
         customSettingsListeners.clear();
+        groupCustomSettingsListeners.clear();
 
-        // НЕ очищаем кэш данных, чтобы сохранить для сравнения
-        // combinedChats.clear();
-
+        Log.d("FragmentChat", "All listeners cleared");
         binding = null;
     }
 }

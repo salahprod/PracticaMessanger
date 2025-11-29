@@ -27,9 +27,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+import java.util.Locale;
 
 public class GroupChatActivity extends AppCompatActivity {
 
@@ -40,14 +39,16 @@ public class GroupChatActivity extends AppCompatActivity {
     private List<GroupMessage> messages = new ArrayList<>();
     private ValueEventListener messagesListener;
     private ValueEventListener groupInfoListener;
-    private ValueEventListener onlineUsersListener;
+    private ValueEventListener usersListener;
     private ValueEventListener userRoleListener;
     private String currentUserId;
     private List<String> groupMembers = new ArrayList<>();
-    private Set<String> onlineUsers = new HashSet<>();
     private DatabaseReference groupRef;
     private boolean isAdmin = false;
     private boolean isOwner = false;
+
+    private int totalMembersCount = 0;
+    private int onlineMembersCount = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,13 +68,13 @@ public class GroupChatActivity extends AppCompatActivity {
 
         groupRef = FirebaseDatabase.getInstance().getReference("Groups").child(groupId);
 
-        Log.d("GroupChatActivity", "Opening group: " + groupId + ", name: " + groupName);
-        Log.d("GroupChatActivity", "Current user ID: " + currentUserId);
+        Log.d("GroupChatActivity", "Opening group: " + groupId);
+        Log.d("GroupChatActivity", "Current user: " + currentUserId);
 
         initializeViews();
         loadGroupInfo();
         loadMessages();
-        setupOnlineStatus();
+        setupCurrentUserOnlineStatus();
         markAllMessagesAsRead();
         checkUserRole();
 
@@ -97,27 +98,14 @@ public class GroupChatActivity extends AppCompatActivity {
                         if ("owner".equals(role)) {
                             isOwner = true;
                             isAdmin = true;
-                            Log.d("GroupChatActivity", "User is OWNER of the group");
                         } else if ("admin".equals(role)) {
                             isAdmin = true;
                             isOwner = false;
-                            Log.d("GroupChatActivity", "User is ADMIN of the group");
                         } else {
                             isAdmin = false;
                             isOwner = false;
-                            Log.d("GroupChatActivity", "User is REGULAR MEMBER of the group");
                         }
-                    } else {
-                        // Если роль null, считаем обычным участником
-                        isAdmin = false;
-                        isOwner = false;
-                        Log.d("GroupChatActivity", "User role is null, considering as regular member");
                     }
-                } else {
-                    // Если пользователя нет в members, считаем обычным участником
-                    isAdmin = false;
-                    isOwner = false;
-                    Log.d("GroupChatActivity", "User not found in members, considering as regular member");
                 }
             }
 
@@ -142,7 +130,7 @@ public class GroupChatActivity extends AppCompatActivity {
         binding.groupName.setText(groupName != null ? groupName : "Group");
 
         binding.messagesRv.setLayoutManager(new LinearLayoutManager(this));
-        messageAdapter = new GroupMessageAdapter(messages);
+        messageAdapter = new GroupMessageAdapter(messages, groupId);
         binding.messagesRv.setAdapter(messageAdapter);
 
         messageAdapter.registerAdapterDataObserver(new androidx.recyclerview.widget.RecyclerView.AdapterDataObserver() {
@@ -176,24 +164,7 @@ public class GroupChatActivity extends AppCompatActivity {
                         binding.groupImage.setImageResource(R.drawable.artem);
                     }
 
-                    // ТОЧНЫЙ подсчет участников группы
-                    groupMembers.clear();
-                    DataSnapshot membersSnapshot = snapshot.child("members");
-                    if (membersSnapshot.exists()) {
-                        for (DataSnapshot memberSnapshot : membersSnapshot.getChildren()) {
-                            String memberId = memberSnapshot.getKey();
-                            if (memberId != null) {
-                                groupMembers.add(memberId);
-                                Log.d("GroupChatActivity", "Found member: " + memberId);
-                            }
-                        }
-                        updateMembersCount();
-                        loadOnlineMembers();
-                        Log.d("GroupChatActivity", "Total members: " + groupMembers.size());
-                    } else {
-                        Log.w("GroupChatActivity", "No members found in group");
-                        updateMembersCount();
-                    }
+                    loadGroupMembers(snapshot);
                 }
             }
 
@@ -206,25 +177,129 @@ public class GroupChatActivity extends AppCompatActivity {
         groupRef.addValueEventListener(groupInfoListener);
     }
 
-    private void updateMembersCount() {
-        int totalMembers = groupMembers.size();
-        String membersText = totalMembers + " member" + (totalMembers != 1 ? "s" : "");
-        binding.membersCount.setText(membersText);
-        Log.d("GroupChatActivity", "Updated members count: " + membersText);
+    private void loadGroupMembers(@NonNull DataSnapshot groupSnapshot) {
+        List<String> newGroupMembers = new ArrayList<>();
+        DataSnapshot membersSnapshot = groupSnapshot.child("members");
+
+        if (membersSnapshot.exists()) {
+            for (DataSnapshot memberSnapshot : membersSnapshot.getChildren()) {
+                String memberKey = memberSnapshot.getKey();
+                Object memberValue = memberSnapshot.getValue();
+
+                // Пробуем разные способы получить ID пользователя
+                if (memberKey != null && !memberKey.equals("0") && !memberKey.equals("1") && !memberKey.equals("2")) {
+                    // Если ключ похож на ID пользователя (не цифра)
+                    newGroupMembers.add(memberKey);
+                } else if (memberValue instanceof String) {
+                    // Если значение - строка (возможно это ID пользователя)
+                    String memberId = (String) memberValue;
+                    if (memberId != null && memberId.length() > 5) { // Проверяем что это похоже на ID
+                        newGroupMembers.add(memberId);
+                    }
+                }
+            }
+
+            groupMembers = newGroupMembers;
+            totalMembersCount = groupMembers.size();
+            updateMembersDisplay();
+
+            Log.d("GroupChatActivity", "Total members: " + totalMembersCount);
+
+            if (totalMembersCount > 0) {
+                loadOnlineStatus();
+            } else {
+                onlineMembersCount = 0;
+                updateMembersDisplay();
+            }
+        } else {
+            groupMembers.clear();
+            totalMembersCount = 0;
+            updateMembersDisplay();
+        }
     }
 
-    private void setupOnlineStatus() {
+    private void loadOnlineStatus() {
+        if (usersListener != null) {
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .removeEventListener(usersListener);
+        }
+
+        usersListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot usersSnapshot) {
+                onlineMembersCount = 0;
+
+                Log.d("GroupChatActivity", "=== CHECKING ONLINE STATUS ===");
+                Log.d("GroupChatActivity", "Checking " + totalMembersCount + " members");
+
+                for (String memberId : groupMembers) {
+                    DataSnapshot userSnapshot = usersSnapshot.child(memberId);
+
+                    if (userSnapshot.exists()) {
+                        Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
+
+                        Log.d("GroupChatActivity", "User " + memberId + " - isOnline: " + isOnline);
+
+                        // ТОЛЬКО ПРОВЕРКА isOnline = true
+                        boolean isUserOnline = isOnline != null && isOnline;
+
+                        if (isUserOnline) {
+                            onlineMembersCount++;
+                            Log.d("GroupChatActivity", "✅ ONLINE: " + memberId);
+                        } else {
+                            Log.d("GroupChatActivity", "❌ OFFLINE: " + memberId);
+                        }
+                    } else {
+                        Log.d("GroupChatActivity", "🚫 USER NOT FOUND: " + memberId);
+                    }
+                }
+
+                Log.d("GroupChatActivity", "RESULT: " + onlineMembersCount + " online out of " + totalMembersCount);
+                updateMembersDisplay();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("GroupChatActivity", "Failed to load users data", error.toException());
+                onlineMembersCount = 0;
+                updateMembersDisplay();
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("Users")
+                .addValueEventListener(usersListener);
+    }
+
+    private void updateMembersDisplay() {
+        runOnUiThread(() -> {
+            // Обновляем общее количество участников
+            String membersText = totalMembersCount + " member" + (totalMembersCount != 1 ? "s" : "");
+            binding.membersCount.setText(membersText);
+
+            // Обновляем онлайн статус
+            if (onlineMembersCount > 0) {
+                String onlineText = onlineMembersCount + " online";
+                binding.onlineCount.setText(onlineText);
+                binding.onlineCount.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+            } else {
+                binding.onlineCount.setText("offline");
+                binding.onlineCount.setTextColor(getResources().getColor(android.R.color.darker_gray));
+            }
+        });
+    }
+
+    private void setupCurrentUserOnlineStatus() {
         if (currentUserId != null) {
-            FirebaseDatabase.getInstance().getReference("Users")
-                    .child(currentUserId)
-                    .child("isOnline")
-                    .setValue(true);
+            // Устанавливаем статус онлайн для текущего пользователя
+            HashMap<String, Object> onlineUpdates = new HashMap<>();
+            onlineUpdates.put("isOnline", true);
+            onlineUpdates.put("lastOnline", System.currentTimeMillis());
 
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
-                    .child("lastOnline")
-                    .setValue(System.currentTimeMillis());
+                    .updateChildren(onlineUpdates);
 
+            // Устанавливаем обработчики отключения
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
                     .child("isOnline")
@@ -236,55 +311,6 @@ public class GroupChatActivity extends AppCompatActivity {
                     .child("lastOnline")
                     .onDisconnect()
                     .setValue(System.currentTimeMillis());
-        }
-    }
-
-    private void loadOnlineMembers() {
-        if (onlineUsersListener != null) {
-            FirebaseDatabase.getInstance().getReference("Users")
-                    .removeEventListener(onlineUsersListener);
-        }
-
-        onlineUsersListener = new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                onlineUsers.clear();
-                int onlineCount = 0;
-
-                for (String memberId : groupMembers) {
-                    DataSnapshot userSnapshot = snapshot.child(memberId);
-                    if (userSnapshot.exists()) {
-                        Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
-                        if (isOnline != null && isOnline) {
-                            onlineUsers.add(memberId);
-                            onlineCount++;
-                        }
-                    }
-                }
-
-                updateOnlineCount(onlineCount);
-                Log.d("GroupChatActivity", "Online users: " + onlineCount + " out of " + groupMembers.size());
-            }
-
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {
-                Log.e("GroupChatActivity", "Failed to load online users", error.toException());
-                binding.onlineCount.setText("offline");
-                binding.onlineCount.setTextColor(getResources().getColor(android.R.color.darker_gray));
-            }
-        };
-
-        FirebaseDatabase.getInstance().getReference("Users")
-                .addValueEventListener(onlineUsersListener);
-    }
-
-    private void updateOnlineCount(int onlineCount) {
-        if (onlineCount > 0) {
-            binding.onlineCount.setText(onlineCount + " online");
-            binding.onlineCount.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
-        } else {
-            binding.onlineCount.setText("offline");
-            binding.onlineCount.setTextColor(getResources().getColor(android.R.color.darker_gray));
         }
     }
 
@@ -349,7 +375,7 @@ public class GroupChatActivity extends AppCompatActivity {
             return;
         }
 
-        SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm");
+        SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault());
         String date = dateFormat.format(new Date());
 
         binding.messageEt.setText("");
@@ -366,57 +392,105 @@ public class GroupChatActivity extends AppCompatActivity {
 
         final String finalMessageKey = messageKey;
 
-        FirebaseDatabase.getInstance().getReference("Users")
+        loadUserDataWithCustomSettings(currentUserId, new UserDataCallback() {
+            @Override
+            public void onUserDataLoaded(String userName, String userAvatar) {
+                HashMap<String, Object> messageInfo = new HashMap<>();
+                messageInfo.put("text", finalMessageText);
+                messageInfo.put("ownerId", currentUserId);
+                messageInfo.put("senderName", userName);
+                messageInfo.put("senderAvatar", userAvatar);
+                messageInfo.put("date", finalDate);
+                messageInfo.put("timestamp", System.currentTimeMillis());
+                messageInfo.put("isRead", false);
+
+                HashMap<String, Object> updates = new HashMap<>();
+                updates.put("Groups/" + groupId + "/messages/" + finalMessageKey, messageInfo);
+                updates.put("Groups/" + groupId + "/lastMessage", finalMessageText);
+                updates.put("Groups/" + groupId + "/lastMessageSender", userName);
+                updates.put("Groups/" + groupId + "/lastMessageTime", System.currentTimeMillis());
+
+                FirebaseDatabase.getInstance().getReference()
+                        .updateChildren(updates);
+            }
+
+            @Override
+            public void onError(String error) {
+                Log.e("GroupChatActivity", "Failed to load user data: " + error);
+                sendBasicMessage(finalMessageText, finalDate, finalMessageKey);
+            }
+        });
+    }
+
+    private interface UserDataCallback {
+        void onUserDataLoaded(String userName, String userAvatar);
+        void onError(String error);
+    }
+
+    private void loadUserDataWithCustomSettings(String userId, UserDataCallback callback) {
+        FirebaseDatabase.getInstance().getReference("UserCustomizations")
                 .child(currentUserId)
+                .child("chatContacts")
+                .child(userId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
-                    public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        String currentUserName = "User";
-                        String currentUserAvatar = "";
+                    public void onDataChange(@NonNull DataSnapshot customSnapshot) {
+                        final String[] customName = {null};
+                        final String[] customAvatar = {null};
 
-                        if (snapshot.exists()) {
-                            String login = snapshot.child("login").getValue(String.class);
-                            if (login != null && !login.isEmpty()) {
-                                currentUserName = login;
-                            } else {
-                                String email = snapshot.child("email").getValue(String.class);
-                                if (email != null && email.contains("@")) {
-                                    currentUserName = email.substring(0, email.indexOf("@"));
-                                }
-                            }
-
-                            String avatar = snapshot.child("profileImage").getValue(String.class);
-                            if (avatar != null && !avatar.isEmpty()) {
-                                currentUserAvatar = avatar;
-                            }
+                        if (customSnapshot.exists()) {
+                            customName[0] = customSnapshot.child("customName").getValue(String.class);
+                            customAvatar[0] = customSnapshot.child("customImage").getValue(String.class);
                         }
 
-                        final String finalCurrentUserName = currentUserName;
-                        final String finalCurrentUserAvatar = currentUserAvatar;
+                        FirebaseDatabase.getInstance().getReference("Users")
+                                .child(userId)
+                                .addListenerForSingleValueEvent(new ValueEventListener() {
+                                    @Override
+                                    public void onDataChange(@NonNull DataSnapshot userSnapshot) {
+                                        String userName = "User";
+                                        String userAvatar = "";
 
-                        HashMap<String, Object> messageInfo = new HashMap<>();
-                        messageInfo.put("text", finalMessageText);
-                        messageInfo.put("ownerId", currentUserId);
-                        messageInfo.put("senderName", finalCurrentUserName);
-                        messageInfo.put("senderAvatar", finalCurrentUserAvatar);
-                        messageInfo.put("date", finalDate);
-                        messageInfo.put("timestamp", System.currentTimeMillis());
-                        messageInfo.put("isRead", false);
+                                        if (userSnapshot.exists()) {
+                                            String originalName = userSnapshot.child("login").getValue(String.class);
+                                            if (originalName == null || originalName.trim().isEmpty()) {
+                                                String email = userSnapshot.child("email").getValue(String.class);
+                                                if (email != null && email.contains("@")) {
+                                                    originalName = email.substring(0, email.indexOf("@"));
+                                                } else {
+                                                    originalName = "User";
+                                                }
+                                            }
 
-                        HashMap<String, Object> updates = new HashMap<>();
-                        updates.put("Groups/" + groupId + "/messages/" + finalMessageKey, messageInfo);
-                        updates.put("Groups/" + groupId + "/lastMessage", finalMessageText);
-                        updates.put("Groups/" + groupId + "/lastMessageSender", finalCurrentUserName);
-                        updates.put("Groups/" + groupId + "/lastMessageTime", System.currentTimeMillis());
+                                            String originalAvatar = userSnapshot.child("profileImage").getValue(String.class);
+                                            if (originalAvatar == null) originalAvatar = "";
 
-                        FirebaseDatabase.getInstance().getReference()
-                                .updateChildren(updates);
+                                            if (customName[0] != null && !customName[0].isEmpty()) {
+                                                userName = customName[0];
+                                            } else {
+                                                userName = originalName;
+                                            }
+
+                                            if (customAvatar[0] != null && !customAvatar[0].isEmpty()) {
+                                                userAvatar = customAvatar[0];
+                                            } else {
+                                                userAvatar = originalAvatar;
+                                            }
+                                        }
+
+                                        callback.onUserDataLoaded(userName, userAvatar);
+                                    }
+
+                                    @Override
+                                    public void onCancelled(@NonNull DatabaseError error) {
+                                        callback.onError("Failed to load user data: " + error.getMessage());
+                                    }
+                                });
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
-                        Log.e("GroupChatActivity", "Failed to load user info", error.toException());
-                        sendBasicMessage(finalMessageText, finalDate, finalMessageKey);
+                        callback.onError("Failed to load custom settings: " + error.getMessage());
                     }
                 });
     }
@@ -454,7 +528,6 @@ public class GroupChatActivity extends AppCompatActivity {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         HashMap<String, Object> updates = new HashMap<>();
-                        final int[] markedAsRead = {0};
 
                         for (DataSnapshot messageSnapshot : snapshot.getChildren()) {
                             String messageId = messageSnapshot.getKey();
@@ -466,7 +539,6 @@ public class GroupChatActivity extends AppCompatActivity {
                                     (isRead == null || !isRead)) {
 
                                 updates.put("Groups/" + groupId + "/messages/" + messageId + "/isRead", true);
-                                markedAsRead[0]++;
                             }
                         }
 
@@ -490,7 +562,7 @@ public class GroupChatActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        setupOnlineStatus();
+        setupCurrentUserOnlineStatus();
         if (groupId != null) {
             markAllMessagesAsRead();
         }
@@ -516,9 +588,9 @@ public class GroupChatActivity extends AppCompatActivity {
             groupRef.removeEventListener(groupInfoListener);
         }
 
-        if (onlineUsersListener != null) {
+        if (usersListener != null) {
             FirebaseDatabase.getInstance().getReference("Users")
-                    .removeEventListener(onlineUsersListener);
+                    .removeEventListener(usersListener);
         }
 
         if (userRoleListener != null && groupId != null) {
@@ -529,6 +601,12 @@ public class GroupChatActivity extends AppCompatActivity {
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
                     .child("isOnline")
+                    .onDisconnect()
+                    .cancel();
+
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("lastOnline")
                     .onDisconnect()
                     .cancel();
         }

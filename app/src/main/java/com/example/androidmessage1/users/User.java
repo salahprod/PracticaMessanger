@@ -9,6 +9,8 @@ public class User {
     private int unreadCount;
     private String userId;
     private int statusColor;
+    private Boolean isOnline; // Добавляем поле для онлайн статуса
+    private Long lastOnline; // Добавляем поле для времени последней активности
 
     public User() {
         // Default constructor
@@ -16,6 +18,8 @@ public class User {
         this.unreadCount = 0;
         this.userId = "";
         this.statusColor = Color.GRAY;
+        this.isOnline = false;
+        this.lastOnline = 0L;
     }
 
     public User(String username, String profileImage) {
@@ -25,6 +29,8 @@ public class User {
         this.unreadCount = 0;
         this.userId = "";
         this.statusColor = Color.GRAY;
+        this.isOnline = false;
+        this.lastOnline = 0L;
     }
 
     public User(String username, String profileImage, String lastMessage, int unreadCount) {
@@ -34,6 +40,8 @@ public class User {
         this.unreadCount = unreadCount;
         this.userId = "";
         this.statusColor = Color.GRAY;
+        this.isOnline = false;
+        this.lastOnline = 0L;
     }
 
     public User(String username, String profileImage, String lastMessage, int unreadCount, String userId, int statusColor) {
@@ -43,6 +51,20 @@ public class User {
         this.unreadCount = unreadCount;
         this.userId = userId;
         this.statusColor = statusColor;
+        this.isOnline = false;
+        this.lastOnline = 0L;
+    }
+
+    // Новый конструктор с онлайн статусом
+    public User(String username, String profileImage, String lastMessage, int unreadCount, String userId, int statusColor, Boolean isOnline, Long lastOnline) {
+        this.username = username;
+        this.profileImage = profileImage;
+        this.lastMessage = lastMessage;
+        this.unreadCount = unreadCount;
+        this.userId = userId;
+        this.statusColor = statusColor;
+        this.isOnline = isOnline;
+        this.lastOnline = lastOnline;
     }
 
     // Getters and Setters
@@ -92,5 +114,37 @@ public class User {
 
     public void setStatusColor(int statusColor) {
         this.statusColor = statusColor;
+    }
+
+    // Новые геттеры и сеттеры для онлайн статуса
+    public Boolean getIsOnline() {
+        return isOnline;
+    }
+
+    public void setIsOnline(Boolean isOnline) {
+        this.isOnline = isOnline;
+    }
+
+    public Long getLastOnline() {
+        return lastOnline;
+    }
+
+    public void setLastOnline(Long lastOnline) {
+        this.lastOnline = lastOnline;
+    }
+
+    // Метод для проверки онлайн статуса
+    public boolean isCurrentlyOnline() {
+        if (isOnline != null && isOnline) {
+            return true;
+        }
+
+        if (lastOnline != null) {
+            long currentTime = System.currentTimeMillis();
+            long timeDiff = currentTime - lastOnline;
+            return timeDiff < 30000; // 30 секунд
+        }
+
+        return false;
     }
 }
