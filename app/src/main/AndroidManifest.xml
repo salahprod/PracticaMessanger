@@ -19,38 +19,47 @@
         android:theme="@style/Theme.AndroidMessage1">
         <activity
             android:name=".ChatActivity"
+            android:screenOrientation="portrait"
             android:exported="false" />
         <activity
             android:name=".PoliticalActivity"
+            android:screenOrientation="portrait"
             android:exported="false" />
         <activity
             android:name=".groups.CreateGroupActivity"
+            android:screenOrientation="portrait"
             android:exported="false"
             android:parentActivityName=".MainActivity" />
 
-        <activity android:name=".ProfileChatActivity" />
+        <activity android:name=".ProfileChatActivity"
+            android:screenOrientation="portrait"/>
 
 
         <activity
             android:name=".groups.GroupChatActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:parentActivityName=".MainActivity" />
 
         <activity
             android:name=".groups.GroupSettingsActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:parentActivityName=".groups.GroupChatActivity" />
 
         <activity
             android:name=".groups.AddMembersActivity"
+            android:screenOrientation="portrait"
             android:exported="false"
             android:parentActivityName=".groups.GroupSettingsActivity" />
 
         <activity
             android:name=".RegisterActivity"
+            android:screenOrientation="portrait"
             android:exported="false" /> <!-- Сделайте LoginActivity запускаемой -->
         <activity
             android:name=".LoginActivity"
+            android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

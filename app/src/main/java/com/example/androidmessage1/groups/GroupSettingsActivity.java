@@ -722,8 +722,6 @@ public class GroupSettingsActivity extends AppCompatActivity {
         Log.d("GroupSettings", "Opening AddMembersActivity for group: " + groupId);
     }
 
-    // УДАЛЕН МЕТОД showMemberOptions() так как он больше не нужен
-
     private void showAdvancedMemberOptions(GroupMember member) {
         if (!isOwner && !isAdmin) {
             return;
@@ -850,6 +848,11 @@ public class GroupSettingsActivity extends AppCompatActivity {
                                             .addOnCompleteListener(task2 -> {
                                                 Toast.makeText(GroupSettingsActivity.this, "Member removed", Toast.LENGTH_SHORT).show();
                                                 Log.d("GroupSettings", "Member removed: " + memberId);
+
+                                                // ОБНОВЛЕНИЕ: Если удаляем текущего пользователя, переходим в чаты
+                                                if (memberId.equals(currentUserId)) {
+                                                    navigateToChatsFragment();
+                                                }
                                             });
                                 } else {
                                     Toast.makeText(GroupSettingsActivity.this, "Failed to remove member", Toast.LENGTH_SHORT).show();
@@ -911,7 +914,7 @@ public class GroupSettingsActivity extends AppCompatActivity {
                                             Toast.makeText(GroupSettingsActivity.this, "You left the group", Toast.LENGTH_SHORT).show();
                                             Log.d("GroupSettings", "User left group: " + groupId);
 
-                                            // ОБНОВЛЕННЫЙ КОД: Переход в список чатов
+                                            // ОБНОВЛЕННЫЙ КОД: Переход в список чатов для всех пользователей
                                             navigateToChatsFragment();
                                         });
                             } else {
@@ -929,60 +932,85 @@ public class GroupSettingsActivity extends AppCompatActivity {
     }
 
     private void deleteGroup() {
-        groupRef.removeValue()
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        groupRef.child("members").addListenerForSingleValueEvent(new ValueEventListener() {
-                            @Override
-                            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                                for (DataSnapshot memberSnapshot : snapshot.getChildren()) {
-                                    String memberId = memberSnapshot.getValue(String.class);
-                                    if (memberId != null) {
-                                        FirebaseDatabase.getInstance().getReference("Users")
-                                                .child(memberId)
-                                                .child("groups")
-                                                .child(groupId)
-                                                .removeValue();
-                                    }
+        // Сначала получаем список всех участников для уведомления
+        groupRef.child("members").addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                List<String> allMembers = new ArrayList<>();
+                for (DataSnapshot memberSnapshot : snapshot.getChildren()) {
+                    String memberId = memberSnapshot.getValue(String.class);
+                    if (memberId != null) {
+                        allMembers.add(memberId);
+                    }
+                }
+
+                // Удаляем группу из базы данных
+                groupRef.removeValue()
+                        .addOnCompleteListener(task -> {
+                            if (task.isSuccessful()) {
+                                // Удаляем группу у всех участников
+                                DatabaseReference usersRef = FirebaseDatabase.getInstance().getReference("Users");
+                                for (String memberId : allMembers) {
+                                    usersRef.child(memberId)
+                                            .child("groups")
+                                            .child(groupId)
+                                            .removeValue();
                                 }
+
                                 Toast.makeText(GroupSettingsActivity.this, "Group deleted", Toast.LENGTH_SHORT).show();
                                 Log.d("GroupSettings", "Group deleted: " + groupId);
 
-                                // ОБНОВЛЕННЫЙ КОД: Переход в список чатов
+                                // ОБНОВЛЕННЫЙ КОД: Переход в список чатов для всех пользователей
                                 navigateToChatsFragment();
-                            }
-
-                            @Override
-                            public void onCancelled(@NonNull DatabaseError error) {
-                                Toast.makeText(GroupSettingsActivity.this, "Group deleted", Toast.LENGTH_SHORT).show();
-
-                                // ОБНОВЛЕННЫЙ КОД: Переход в список чатов даже при ошибке
-                                navigateToChatsFragment();
+                            } else {
+                                Toast.makeText(GroupSettingsActivity.this, "Failed to delete group", Toast.LENGTH_SHORT).show();
+                                Log.e("GroupSettings", "Failed to delete group: " + groupId);
                             }
                         });
-                    } else {
-                        Toast.makeText(GroupSettingsActivity.this, "Failed to delete group", Toast.LENGTH_SHORT).show();
-                        Log.e("GroupSettings", "Failed to delete group: " + groupId);
-                    }
-                });
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("GroupSettings", "Error getting members for deletion", error.toException());
+                // Если не удалось получить список участников, все равно удаляем группу
+                groupRef.removeValue()
+                        .addOnCompleteListener(task -> {
+                            if (task.isSuccessful()) {
+                                Toast.makeText(GroupSettingsActivity.this, "Group deleted", Toast.LENGTH_SHORT).show();
+                                navigateToChatsFragment();
+                            } else {
+                                Toast.makeText(GroupSettingsActivity.this, "Failed to delete group", Toast.LENGTH_SHORT).show();
+                            }
+                        });
+            }
+        });
     }
 
-    // НОВЫЙ МЕТОД: Переход в FragmentChat (список чатов)
+    // ОБНОВЛЕННЫЙ МЕТОД: Переход в FragmentChat (список чатов) для всех случаев
     private void navigateToChatsFragment() {
         try {
             // Создаем Intent для возврата к основному активити с фрагментом чатов
             Intent intent = new Intent(GroupSettingsActivity.this, com.example.androidmessage1.MainActivity.class);
-            // Устанавливаем флаг для очистки стека активити и запуска MainActivity как новой задачи
+
+            // Устанавливаем флаги для очистки стека активити и запуска MainActivity как новой задачи
             intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            // Можно добавить extra чтобы указать какой фрагмент открыть
+
+            // Добавляем extra чтобы указать какой фрагмент открыть
             intent.putExtra("openFragment", "chats");
+
             startActivity(intent);
             finish(); // Завершаем текущую активити
+
             Log.d("GroupSettings", "Navigating back to chats fragment");
         } catch (Exception e) {
             Log.e("GroupSettings", "Error navigating to chats fragment", e);
-            // В случае ошибки просто завершаем активити
-            finish();
+
+            // Альтернативный способ: просто завершаем активити
+            try {
+                finish();
+            } catch (Exception ex) {
+                Log.e("GroupSettings", "Error finishing activity", ex);
+            }
         }
     }
 

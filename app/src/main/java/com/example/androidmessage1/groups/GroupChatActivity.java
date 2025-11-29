@@ -181,40 +181,133 @@ public class GroupChatActivity extends AppCompatActivity {
         List<String> newGroupMembers = new ArrayList<>();
         DataSnapshot membersSnapshot = groupSnapshot.child("members");
 
+        Log.d("GroupChatActivity", "=== DEBUG MEMBERS STRUCTURE ===");
+
         if (membersSnapshot.exists()) {
+            // Логируем всю структуру members для отладки
             for (DataSnapshot memberSnapshot : membersSnapshot.getChildren()) {
                 String memberKey = memberSnapshot.getKey();
                 Object memberValue = memberSnapshot.getValue();
 
-                // Пробуем разные способы получить ID пользователя
-                if (memberKey != null && !memberKey.equals("0") && !memberKey.equals("1") && !memberKey.equals("2")) {
-                    // Если ключ похож на ID пользователя (не цифра)
-                    newGroupMembers.add(memberKey);
-                } else if (memberValue instanceof String) {
-                    // Если значение - строка (возможно это ID пользователя)
+                Log.d("GroupChatActivity", "Member - Key: " + memberKey + ", Value: " + memberValue + ", Value type: " + (memberValue != null ? memberValue.getClass().getSimpleName() : "null"));
+
+                // СПОСОБ 1: Если значение - строка и похоже на ID пользователя
+                if (memberValue instanceof String) {
                     String memberId = (String) memberValue;
-                    if (memberId != null && memberId.length() > 5) { // Проверяем что это похоже на ID
+                    if (isValidUserId(memberId)) {
                         newGroupMembers.add(memberId);
+                        Log.d("GroupChatActivity", "✅ Added member from value: " + memberId);
+                        continue;
                     }
                 }
+
+                // СПОСОБ 2: Если ключ похож на ID пользователя
+                if (isValidUserId(memberKey)) {
+                    newGroupMembers.add(memberKey);
+                    Log.d("GroupChatActivity", "✅ Added member from key: " + memberKey);
+                    continue;
+                }
+
+                Log.d("GroupChatActivity", "❌ Skipped member - Key: " + memberKey + ", Value: " + memberValue);
             }
+
+            // СПОСОБ 3: Пробуем найти пользователей в других полях
+            tryAlternativeMemberSources(groupSnapshot, newGroupMembers);
 
             groupMembers = newGroupMembers;
             totalMembersCount = groupMembers.size();
             updateMembersDisplay();
 
-            Log.d("GroupChatActivity", "Total members: " + totalMembersCount);
+            Log.d("GroupChatActivity", "=== FINAL MEMBERS LIST ===");
+            for (String member : groupMembers) {
+                Log.d("GroupChatActivity", "Member: " + member);
+            }
+            Log.d("GroupChatActivity", "Total valid members: " + totalMembersCount);
 
             if (totalMembersCount > 0) {
                 loadOnlineStatus();
             } else {
                 onlineMembersCount = 0;
                 updateMembersDisplay();
+                Log.w("GroupChatActivity", "No valid member IDs found!");
             }
         } else {
+            Log.w("GroupChatActivity", "No members found in group");
             groupMembers.clear();
             totalMembersCount = 0;
             updateMembersDisplay();
+        }
+    }
+
+    private boolean isValidUserId(String userId) {
+        if (userId == null || userId.isEmpty()) {
+            return false;
+        }
+
+        // Проверяем что это не цифра (игнорируем "0", "1", "2", "3" и т.д.)
+        if (userId.matches("\\d+")) {
+            return false;
+        }
+
+        // Проверяем что ID имеет нормальную длину (обычно Firebase ID длинные)
+        if (userId.length() < 10) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private void tryAlternativeMemberSources(@NonNull DataSnapshot groupSnapshot, List<String> membersList) {
+        // Пробуем поле membersList
+        DataSnapshot membersListSnapshot = groupSnapshot.child("membersList");
+        if (membersListSnapshot.exists()) {
+            Log.d("GroupChatActivity", "Found membersList field");
+            for (DataSnapshot memberSnapshot : membersListSnapshot.getChildren()) {
+                String memberId = memberSnapshot.getValue(String.class);
+                if (isValidUserId(memberId) && !membersList.contains(memberId)) {
+                    membersList.add(memberId);
+                    Log.d("GroupChatActivity", "✅ Added member from membersList: " + memberId);
+                }
+            }
+        }
+
+        // Пробуем поле participants
+        DataSnapshot participantsSnapshot = groupSnapshot.child("participants");
+        if (participantsSnapshot.exists()) {
+            Log.d("GroupChatActivity", "Found participants field");
+            for (DataSnapshot participantSnapshot : participantsSnapshot.getChildren()) {
+                String participantId = participantSnapshot.getValue(String.class);
+                if (isValidUserId(participantId) && !membersList.contains(participantId)) {
+                    membersList.add(participantId);
+                    Log.d("GroupChatActivity", "✅ Added participant: " + participantId);
+                }
+            }
+        }
+
+        // Пробуем поле users
+        DataSnapshot usersSnapshot = groupSnapshot.child("users");
+        if (usersSnapshot.exists()) {
+            Log.d("GroupChatActivity", "Found users field");
+            for (DataSnapshot userSnapshot : usersSnapshot.getChildren()) {
+                String userId = userSnapshot.getValue(String.class);
+                if (isValidUserId(userId) && !membersList.contains(userId)) {
+                    membersList.add(userId);
+                    Log.d("GroupChatActivity", "✅ Added user: " + userId);
+                }
+            }
+        }
+
+        // Пробуем поле memberIds
+        DataSnapshot memberIdsSnapshot = groupSnapshot.child("memberIds");
+        if (memberIdsSnapshot.exists()) {
+            Log.d("GroupChatActivity", "Found memberIds field");
+            for (DataSnapshot memberIdSnapshot : memberIdsSnapshot.getChildren()) {
+                String memberId = memberIdSnapshot.getValue(String.class);
+                if (isValidUserId(memberId) && !membersList.contains(memberId)) {
+                    membersList.add(memberId);
+                    Log.d("GroupChatActivity", "✅ Added member from memberIds: " + memberId);
+                }
+            }
         }
     }
 
@@ -229,18 +322,18 @@ public class GroupChatActivity extends AppCompatActivity {
             public void onDataChange(@NonNull DataSnapshot usersSnapshot) {
                 onlineMembersCount = 0;
 
-                Log.d("GroupChatActivity", "=== CHECKING ONLINE STATUS ===");
-                Log.d("GroupChatActivity", "Checking " + totalMembersCount + " members");
+                Log.d("GroupChatActivity", "=== CHECKING ONLINE STATUS FOR " + totalMembersCount + " MEMBERS ===");
 
                 for (String memberId : groupMembers) {
                     DataSnapshot userSnapshot = usersSnapshot.child(memberId);
 
                     if (userSnapshot.exists()) {
                         Boolean isOnline = userSnapshot.child("isOnline").getValue(Boolean.class);
+                        Long lastOnline = userSnapshot.child("lastOnline").getValue(Long.class);
 
-                        Log.d("GroupChatActivity", "User " + memberId + " - isOnline: " + isOnline);
+                        Log.d("GroupChatActivity", "User " + memberId + " - isOnline: " + isOnline + ", lastOnline: " + lastOnline);
 
-                        // ТОЛЬКО ПРОВЕРКА isOnline = true
+                        // ТОЛЬКО ПРОВЕРКА isOnline = true (реальный онлайн статус)
                         boolean isUserOnline = isOnline != null && isOnline;
 
                         if (isUserOnline) {
@@ -250,7 +343,7 @@ public class GroupChatActivity extends AppCompatActivity {
                             Log.d("GroupChatActivity", "❌ OFFLINE: " + memberId);
                         }
                     } else {
-                        Log.d("GroupChatActivity", "🚫 USER NOT FOUND: " + memberId);
+                        Log.d("GroupChatActivity", "🚫 USER NOT FOUND IN DATABASE: " + memberId);
                     }
                 }
 
@@ -272,11 +365,9 @@ public class GroupChatActivity extends AppCompatActivity {
 
     private void updateMembersDisplay() {
         runOnUiThread(() -> {
-            // Обновляем общее количество участников
             String membersText = totalMembersCount + " member" + (totalMembersCount != 1 ? "s" : "");
             binding.membersCount.setText(membersText);
 
-            // Обновляем онлайн статус
             if (onlineMembersCount > 0) {
                 String onlineText = onlineMembersCount + " online";
                 binding.onlineCount.setText(onlineText);
@@ -290,6 +381,8 @@ public class GroupChatActivity extends AppCompatActivity {
 
     private void setupCurrentUserOnlineStatus() {
         if (currentUserId != null) {
+            Log.d("GroupChatActivity", "Setting current user online: " + currentUserId);
+
             // Устанавливаем статус онлайн для текущего пользователя
             HashMap<String, Object> onlineUpdates = new HashMap<>();
             onlineUpdates.put("isOnline", true);
@@ -297,20 +390,17 @@ public class GroupChatActivity extends AppCompatActivity {
 
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
-                    .updateChildren(onlineUpdates);
+                    .updateChildren(onlineUpdates)
+                    .addOnCompleteListener(task -> {
+                        if (task.isSuccessful()) {
+                            Log.d("GroupChatActivity", "✅ Current user set to online: " + currentUserId);
+                        } else {
+                            Log.e("GroupChatActivity", "❌ Failed to set current user online", task.getException());
+                        }
+                    });
 
-            // Устанавливаем обработчики отключения
-            FirebaseDatabase.getInstance().getReference("Users")
-                    .child(currentUserId)
-                    .child("isOnline")
-                    .onDisconnect()
-                    .setValue(false);
-
-            FirebaseDatabase.getInstance().getReference("Users")
-                    .child(currentUserId)
-                    .child("lastOnline")
-                    .onDisconnect()
-                    .setValue(System.currentTimeMillis());
+            // НЕ устанавливаем обработчики отключения - пользователь остается онлайн
+            // пока находится в любом из активностей приложения
         }
     }
 
@@ -562,6 +652,7 @@ public class GroupChatActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        Log.d("GroupChatActivity", "=== ON RESUME ===");
         setupCurrentUserOnlineStatus();
         if (groupId != null) {
             markAllMessagesAsRead();
@@ -571,14 +662,20 @@ public class GroupChatActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        Log.d("GroupChatActivity", "=== ON PAUSE ===");
         if (groupId != null) {
             markAllMessagesAsRead();
         }
+        // НЕ устанавливаем офлайн статус при паузе - пользователь остается онлайн
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        Log.d("GroupChatActivity", "=== ON DESTROY ===");
+
+        // НЕ устанавливаем офлайн статус при уничтожении активности
+        // Пользователь остается онлайн, если переходит в другую активность приложения
 
         if (messagesListener != null && groupId != null) {
             groupRef.child("messages").removeEventListener(messagesListener);
@@ -595,20 +692,6 @@ public class GroupChatActivity extends AppCompatActivity {
 
         if (userRoleListener != null && groupId != null) {
             groupRef.child("members").child(currentUserId).removeEventListener(userRoleListener);
-        }
-
-        if (currentUserId != null) {
-            FirebaseDatabase.getInstance().getReference("Users")
-                    .child(currentUserId)
-                    .child("isOnline")
-                    .onDisconnect()
-                    .cancel();
-
-            FirebaseDatabase.getInstance().getReference("Users")
-                    .child(currentUserId)
-                    .child("lastOnline")
-                    .onDisconnect()
-                    .cancel();
         }
     }
 }
