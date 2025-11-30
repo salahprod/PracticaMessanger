@@ -42,6 +42,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         holder.messageTv.setText(message.getText());
         holder.dateTv.setText(message.getDate());
 
+
         // Загружаем кастомные настройки для отображения
         loadCustomSettings(holder, message);
 

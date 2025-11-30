@@ -1,15 +1,18 @@
 package com.example.androidmessage1;
 
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
@@ -17,11 +20,19 @@ import com.bumptech.glide.Glide;
 import com.example.androidmessage1.databinding.ActivityChatBinding;
 import com.example.androidmessage1.message.Message;
 import com.example.androidmessage1.message.MessageAdapter;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.storage.FirebaseStorage;
+import com.google.firebase.storage.StorageMetadata;
+import com.google.firebase.storage.StorageReference;
+import com.google.firebase.storage.UploadTask;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -48,6 +59,15 @@ public class ChatActivity extends AppCompatActivity {
     private String originalUsername = "";
     private String originalProfileImage = "";
 
+    // Константы для выбора файлов
+    private static final int PICK_FILE_REQUEST = 1001;
+
+    // Переменные для хранения выбранных файлов
+    private List<Uri> selectedFiles = new ArrayList<>();
+    private boolean isSendingFiles = false;
+    private int totalFilesToSend = 0;
+    private int successfullySentFiles = 0;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -73,7 +93,7 @@ public class ChatActivity extends AppCompatActivity {
             getOtherUserIdFromChat();
         } else {
             loadOtherUserData();
-            loadCustomSettings(); // Загружаем кастомные настройки
+            loadCustomSettings();
             loadMessages();
             setupKeyboardBehavior();
             markAllMessagesAsRead();
@@ -81,16 +101,13 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Метод для обновления онлайн статуса
     private void updateUserOnlineStatus() {
         if (currentUserId != null) {
-            // Устанавливаем текущего пользователя онлайн
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
                     .child("isOnline")
                     .setValue(true);
 
-            // Устанавливаем время последней активности
             long currentTime = System.currentTimeMillis();
             SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
             SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy", Locale.getDefault());
@@ -107,7 +124,6 @@ public class ChatActivity extends AppCompatActivity {
                     .child(currentUserId)
                     .updateChildren(updateData);
 
-            // Устанавливаем слушатель для автоматического установки офлайн статуса при выходе
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
                     .child("isOnline")
@@ -119,9 +135,12 @@ public class ChatActivity extends AppCompatActivity {
     private void initializeViews() {
         binding.messagesRv.setLayoutManager(new LinearLayoutManager(this));
 
-        // Создаем адаптер с передачей chatId и otherUserId
+        // Создаем адаптер с поддержкой кликов
         messageAdapter = new MessageAdapter(messages, chatId, otherUserId);
         binding.messagesRv.setAdapter(messageAdapter);
+
+        // Настраиваем обработчик кликов для сообщений
+        setupMessageClickListener();
 
         messageAdapter.registerAdapterDataObserver(new androidx.recyclerview.widget.RecyclerView.AdapterDataObserver() {
             @Override
@@ -133,7 +152,11 @@ public class ChatActivity extends AppCompatActivity {
         binding.sendMessageBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                sendMessage();
+                if (!selectedFiles.isEmpty()) {
+                    sendFiles();
+                } else {
+                    sendMessage();
+                }
             }
         });
 
@@ -147,11 +170,10 @@ public class ChatActivity extends AppCompatActivity {
         binding.sendVideoBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Toast.makeText(ChatActivity.this, "Video feature coming soon", Toast.LENGTH_SHORT).show();
+                openFilePicker();
             }
         });
 
-        // Добавляем обработчик клика на аватарку пользователя для перехода в настройки профиля
         binding.chatUserAvatar.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -159,16 +181,468 @@ public class ChatActivity extends AppCompatActivity {
             }
         });
 
-        // Добавляем обработчик клика на имя пользователя для перехода в настройки профиля
         binding.chatUserName.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 openProfileSettings();
             }
         });
+
+        // Настройка RecyclerView для превью выбранных файлов
+        setupSelectedFilesPreview();
     }
 
-    // ДОБАВЛЕННЫЙ МЕТОД: Открытие настроек профиля чата
+    // МЕТОД: Настройка обработчика кликов для сообщений
+    private void setupMessageClickListener() {
+        binding.messagesRv.addOnItemTouchListener(new RecyclerItemClickListener(this, binding.messagesRv, new RecyclerItemClickListener.OnItemClickListener() {
+            @Override
+            public void onItemClick(View view, int position) {
+                if (position >= 0 && position < messages.size()) {
+                    Message message = messages.get(position);
+                    handleMessageClick(message);
+                }
+            }
+
+            @Override
+            public void onLongItemClick(View view, int position) {
+                // Обработка долгого нажатия (опционально)
+            }
+        }));
+    }
+
+    // КЛАСС: Обработчик кликов для RecyclerView
+    public static class RecyclerItemClickListener implements androidx.recyclerview.widget.RecyclerView.OnItemTouchListener {
+        private OnItemClickListener mListener;
+        private android.view.GestureDetector mGestureDetector;
+
+        public interface OnItemClickListener {
+            void onItemClick(View view, int position);
+            void onLongItemClick(View view, int position);
+        }
+
+        public RecyclerItemClickListener(android.content.Context context, final androidx.recyclerview.widget.RecyclerView recyclerView, OnItemClickListener listener) {
+            mListener = listener;
+            mGestureDetector = new android.view.GestureDetector(context, new android.view.GestureDetector.SimpleOnGestureListener() {
+                @Override
+                public boolean onSingleTapUp(MotionEvent e) {
+                    return true;
+                }
+
+                @Override
+                public void onLongPress(MotionEvent e) {
+                    View child = recyclerView.findChildViewUnder(e.getX(), e.getY());
+                    if (child != null && mListener != null) {
+                        mListener.onLongItemClick(child, recyclerView.getChildAdapterPosition(child));
+                    }
+                }
+            });
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(@NonNull androidx.recyclerview.widget.RecyclerView rv, @NonNull MotionEvent e) {
+            View childView = rv.findChildViewUnder(e.getX(), e.getY());
+            if (childView != null && mListener != null && mGestureDetector.onTouchEvent(e)) {
+                mListener.onItemClick(childView, rv.getChildAdapterPosition(childView));
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public void onTouchEvent(@NonNull androidx.recyclerview.widget.RecyclerView rv, @NonNull MotionEvent e) {
+        }
+
+        @Override
+        public void onRequestDisallowInterceptTouchEvent(boolean disallowIntercept) {
+        }
+    }
+
+    // МЕТОД: Обработка кликов на сообщения
+    private void handleMessageClick(Message message) {
+        String messageType = message.getMessageType();
+        String fileUrl = message.getFileUrl();
+
+        if (fileUrl != null && !fileUrl.isEmpty()) {
+            switch (messageType) {
+                case "image":
+                    openImageFullScreen(message);
+                    break;
+                case "video":
+                    playVideo(message);
+                    break;
+                case "file":
+                    downloadFile(message);
+                    break;
+                default:
+                    // Для текстовых сообщений ничего не делаем
+                    break;
+            }
+        }
+    }
+
+    // МЕТОД: Открытие изображения в полноэкранном режиме
+    private void openImageFullScreen(Message message) {
+        if (message.getFileUrl() != null && !message.getFileUrl().isEmpty()) {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(Uri.parse(message.getFileUrl()), "image/*");
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            if (intent.resolveActivity(getPackageManager()) != null) {
+                startActivity(intent);
+            } else {
+                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(message.getFileUrl()));
+                startActivity(browserIntent);
+            }
+        } else {
+            Toast.makeText(this, "Image not available", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // МЕТОД: Воспроизведение видео
+    private void playVideo(Message message) {
+        if (message.getFileUrl() != null && !message.getFileUrl().isEmpty()) {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(Uri.parse(message.getFileUrl()), "video/*");
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            if (intent.resolveActivity(getPackageManager()) != null) {
+                startActivity(intent);
+            } else {
+                Toast.makeText(this, "No video player app found", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            Toast.makeText(this, "Video not available", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // МЕТОД: Скачивание файла
+    private void downloadFile(Message message) {
+        if (message.getFileUrl() != null && !message.getFileUrl().isEmpty()) {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setData(Uri.parse(message.getFileUrl()));
+
+            if (intent.resolveActivity(getPackageManager()) != null) {
+                startActivity(intent);
+            } else {
+                Toast.makeText(this, "No app found to open this file", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            Toast.makeText(this, "File not available", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // МЕТОД: Настройка превью выбранных файлов
+    private void setupSelectedFilesPreview() {
+        // Скрываем превью по умолчанию
+        binding.selectedFilesContainer.setVisibility(View.GONE);
+
+        // Настраиваем горизонтальный RecyclerView для превью
+        LinearLayoutManager layoutManager = new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false);
+        binding.selectedFilesRv.setLayoutManager(layoutManager);
+
+        // Кнопка очистки выбранных файлов
+        binding.clearSelectedFilesBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                clearSelectedFiles();
+            }
+        });
+    }
+
+    // МЕТОД: Показать превью выбранных файлов
+    private void showSelectedFilesPreview() {
+        if (selectedFiles.isEmpty()) {
+            binding.selectedFilesContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        binding.selectedFilesContainer.setVisibility(View.VISIBLE);
+
+        // Создаем адаптер для превью
+        SelectedFilesAdapter adapter = new SelectedFilesAdapter(selectedFiles, new SelectedFilesAdapter.OnFileRemoveListener() {
+            @Override
+            public void onFileRemove(int position) {
+                removeFileFromSelection(position);
+            }
+        });
+
+        binding.selectedFilesRv.setAdapter(adapter);
+        binding.selectedFilesCount.setText("Выбрано файлов: " + selectedFiles.size());
+    }
+
+    // МЕТОД: Удалить файл из выбранных
+    private void removeFileFromSelection(int position) {
+        if (position >= 0 && position < selectedFiles.size()) {
+            selectedFiles.remove(position);
+            showSelectedFilesPreview();
+            updateSendButtonState();
+        }
+    }
+
+    // МЕТОД: Очистить все выбранные файлы
+    private void clearSelectedFiles() {
+        selectedFiles.clear();
+        binding.selectedFilesContainer.setVisibility(View.GONE);
+        updateSendButtonState();
+        Toast.makeText(this, "Все файлы удалены из выбора", Toast.LENGTH_SHORT).show();
+    }
+
+    private void openFilePicker() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "video/*"});
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+
+        try {
+            startActivityForResult(Intent.createChooser(intent, "Select Files"), PICK_FILE_REQUEST);
+        } catch (android.content.ActivityNotFoundException ex) {
+            Toast.makeText(this, "No file manager available", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (resultCode == RESULT_OK) {
+            if (requestCode == PICK_FILE_REQUEST) {
+                handleSelectedFiles(data);
+            }
+        }
+    }
+
+    private void handleSelectedFiles(Intent data) {
+        selectedFiles.clear();
+
+        if (data.getClipData() != null) {
+            int count = data.getClipData().getItemCount();
+            for (int i = 0; i < count; i++) {
+                Uri fileUri = data.getClipData().getItemAt(i).getUri();
+                selectedFiles.add(fileUri);
+            }
+        } else if (data.getData() != null) {
+            selectedFiles.add(data.getData());
+        }
+
+        if (!selectedFiles.isEmpty()) {
+            updateSendButtonState();
+            showSelectedFilesPreview(); // ПОКАЗЫВАЕМ ПРЕВЬЮ
+            Toast.makeText(this, "Selected " + selectedFiles.size() + " files. Press send to upload.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void updateSendButtonState() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (!selectedFiles.isEmpty()) {
+                    binding.sendMessageBtn.setContentDescription("Send " + selectedFiles.size() + " files");
+                } else {
+                    binding.sendMessageBtn.setContentDescription("Send message");
+                }
+            }
+        });
+    }
+
+    private void sendFiles() {
+        if (isSendingFiles) {
+            Toast.makeText(this, "Files are already being sent", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (selectedFiles.isEmpty()) {
+            Toast.makeText(this, "No files selected", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        isSendingFiles = true;
+        binding.sendMessageBtn.setEnabled(false);
+
+        binding.sendMessageBtn.setContentDescription("Sending files...");
+        Toast.makeText(this, "Sending " + selectedFiles.size() + " files...", Toast.LENGTH_SHORT).show();
+
+        // Скрываем превью перед отправкой
+        binding.selectedFilesContainer.setVisibility(View.GONE);
+
+        // Сбрасываем счетчики
+        totalFilesToSend = selectedFiles.size();
+        successfullySentFiles = 0;
+
+        // Отправляем каждый файл
+        for (Uri fileUri : selectedFiles) {
+            uploadFileToStorage(fileUri);
+        }
+    }
+
+    private void uploadFileToStorage(Uri fileUri) {
+        String fileName = "file_" + System.currentTimeMillis() + "_" + currentUserId;
+        StorageReference fileRef = FirebaseStorage.getInstance().getReference()
+                .child("chat_files")
+                .child(chatId)
+                .child(fileName);
+
+        String fileType = getContentResolver().getType(fileUri);
+        final String messageType;
+        if (fileType != null) {
+            if (fileType.startsWith("image/")) {
+                messageType = "image";
+            } else if (fileType.startsWith("video/")) {
+                messageType = "video";
+            } else {
+                messageType = "file";
+            }
+        } else {
+            messageType = "file";
+        }
+
+        // Добавляем метаданные для правильного определения типа контента
+        StorageMetadata metadata = new StorageMetadata.Builder()
+                .setContentType(fileType)
+                .build();
+
+        UploadTask uploadTask = fileRef.putFile(fileUri, metadata);
+
+        uploadTask.addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
+            @Override
+            public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                fileRef.getDownloadUrl().addOnSuccessListener(new OnSuccessListener<Uri>() {
+                    @Override
+                    public void onSuccess(Uri uri) {
+                        sendFileMessage(uri.toString(), messageType, getFileName(fileUri));
+                        successfullySentFiles++;
+                        checkAllFilesSent();
+                    }
+                });
+            }
+        }).addOnFailureListener(new OnFailureListener() {
+            @Override
+            public void onFailure(@NonNull Exception e) {
+                Toast.makeText(ChatActivity.this, "Upload failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                successfullySentFiles++;
+                checkAllFilesSent();
+            }
+        });
+    }
+
+    private String getFileName(Uri uri) {
+        String result = null;
+        if (uri.getScheme().equals("content")) {
+            try (android.database.Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if (nameIndex != -1) {
+                        result = cursor.getString(nameIndex);
+                    }
+                }
+            } catch (Exception e) {
+                Log.e("ChatActivity", "Error getting file name", e);
+            }
+        }
+        if (result == null) {
+            result = uri.getLastPathSegment();
+        }
+        return result;
+    }
+
+    private void sendFileMessage(String fileUrl, String messageType, String fileName) {
+        SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm");
+        String date = dateFormat.format(new Date());
+
+        final String currentChatId = this.chatId;
+
+        String messageKey = FirebaseDatabase.getInstance()
+                .getReference("Chats")
+                .child(currentChatId)
+                .child("messages")
+                .push()
+                .getKey();
+
+        if (messageKey == null) {
+            Toast.makeText(this, "Error creating message", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String messageText = getFileMessageText(messageType, fileName);
+
+        HashMap<String, Object> messageInfo = new HashMap<>();
+        messageInfo.put("id", messageKey);
+        messageInfo.put("ownerId", currentUserId);
+        messageInfo.put("date", date);
+        messageInfo.put("timestamp", System.currentTimeMillis());
+        messageInfo.put("isRead", false);
+        messageInfo.put("messageType", messageType);
+        messageInfo.put("fileUrl", fileUrl);
+        messageInfo.put("fileName", fileName);
+        messageInfo.put("text", messageText);
+
+        FirebaseDatabase.getInstance()
+                .getReference("Chats")
+                .child(currentChatId)
+                .child("messages")
+                .child(messageKey)
+                .setValue(messageInfo)
+                .addOnCompleteListener(new OnCompleteListener<Void>() {
+                    @Override
+                    public void onComplete(@NonNull Task<Void> task) {
+                        if (task.isSuccessful()) {
+                            String lastMessageText = getLastMessageText(messageType, fileName);
+                            updateLastMessageInChat(lastMessageText, System.currentTimeMillis());
+                            Log.d("ChatActivity", "File message sent: " + messageType);
+                        } else {
+                            Toast.makeText(ChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
+                        }
+                    }
+                });
+    }
+
+    private String getFileMessageText(String messageType, String fileName) {
+        switch (messageType) {
+            case "image":
+                return "📷 Photo";
+            case "video":
+                return "🎥 Video";
+            case "file":
+                return "📎 File: " + (fileName != null ? fileName : "File");
+            default:
+                return "📎 File";
+        }
+    }
+
+    private String getLastMessageText(String messageType, String fileName) {
+        switch (messageType) {
+            case "image":
+                return "📷 Image";
+            case "video":
+                return "🎥 Video";
+            case "file":
+                return "📎 File: " + (fileName != null ? fileName : "File");
+            default:
+                return "📎 File";
+        }
+    }
+
+    private void checkAllFilesSent() {
+        // Проверяем, все ли файлы обработаны
+        if (successfullySentFiles >= totalFilesToSend) {
+            new Handler().postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    selectedFiles.clear();
+                    isSendingFiles = false;
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            binding.sendMessageBtn.setEnabled(true);
+                            updateSendButtonState();
+                            Toast.makeText(ChatActivity.this, "Files sent successfully", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+            }, 1000);
+        }
+    }
+
     private void openProfileSettings() {
         if (otherUserId != null && chatId != null) {
             Intent intent = new Intent(ChatActivity.this, ProfileChatActivity.class);
@@ -180,16 +654,9 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Метод для открытия ProfileChatActivity (оставлен для совместимости)
-    private void openProfileChatActivity() {
-        openProfileSettings();
-    }
-
-    // ИСПРАВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек из правильного пути
     private void loadCustomSettings() {
         if (otherUserId == null || currentUserId == null) return;
 
-        // Удаляем предыдущий слушатель если есть
         if (customSettingsListener != null) {
             FirebaseDatabase.getInstance().getReference("UserCustomizations")
                     .child(currentUserId)
@@ -208,25 +675,21 @@ public class ChatActivity extends AppCompatActivity {
                     String customName = snapshot.child("customName").getValue(String.class);
                     String customImage = snapshot.child("customImage").getValue(String.class);
 
-                    // Используем кастомное имя если есть
                     if (customName != null && !customName.isEmpty()) {
                         displayName = customName;
                     }
 
-                    // Используем кастомное фото если есть
                     if (customImage != null && !customImage.isEmpty()) {
                         displayImage = customImage;
                     }
                 }
 
-                // Применяем настройки в UI
                 updateUserDisplay(displayName, displayImage);
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 Log.e("ChatActivity", "Failed to load custom settings", error.toException());
-                // В случае ошибки используем оригинальные данные
                 updateUserDisplay(originalUsername, originalProfileImage);
             }
         };
@@ -238,19 +701,16 @@ public class ChatActivity extends AppCompatActivity {
                 .addValueEventListener(customSettingsListener);
     }
 
-    // Метод для обновления отображения пользователя
     private void updateUserDisplay(String displayName, String displayImage) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                // Устанавливаем имя
                 if (displayName != null && !displayName.isEmpty()) {
                     binding.chatUserName.setText(displayName);
                 } else {
                     binding.chatUserName.setText(originalUsername);
                 }
 
-                // Устанавливаем аватарку
                 if (displayImage != null && !displayImage.isEmpty()) {
                     Glide.with(ChatActivity.this)
                             .load(displayImage)
@@ -273,7 +733,6 @@ public class ChatActivity extends AppCompatActivity {
     private void startUserStatusTracking() {
         if (otherUserId == null) return;
 
-        // Удаляем предыдущий слушатель, если он есть
         if (userStatusListener != null) {
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(otherUserId)
@@ -303,7 +762,6 @@ public class ChatActivity extends AppCompatActivity {
                 .child(otherUserId)
                 .addValueEventListener(userStatusListener);
 
-        // Запускаем периодическое обновление статуса
         startPeriodicStatusUpdate();
     }
 
@@ -312,7 +770,6 @@ public class ChatActivity extends AppCompatActivity {
         statusUpdateRunnable = new Runnable() {
             @Override
             public void run() {
-                // Принудительно обновляем статус каждую минуту для актуальности
                 if (otherUserId != null) {
                     FirebaseDatabase.getInstance().getReference("Users")
                             .child(otherUserId)
@@ -335,7 +792,7 @@ public class ChatActivity extends AppCompatActivity {
                                 }
                             });
                 }
-                statusUpdateHandler.postDelayed(this, 60000); // Обновляем каждую минуту
+                statusUpdateHandler.postDelayed(this, 60000);
             }
         };
         statusUpdateHandler.post(statusUpdateRunnable);
@@ -367,7 +824,6 @@ public class ChatActivity extends AppCompatActivity {
         long minutes = diff / (60 * 1000);
         long hours = diff / (60 * 60 * 1000);
 
-        // Получаем текущую дату и дату последней активности
         java.util.Calendar currentCal = java.util.Calendar.getInstance();
         java.util.Calendar lastOnlineCal = java.util.Calendar.getInstance();
         lastOnlineCal.setTimeInMillis(lastOnlineTimestamp);
@@ -377,11 +833,9 @@ public class ChatActivity extends AppCompatActivity {
         int lastOnlineDay = lastOnlineCal.get(java.util.Calendar.DAY_OF_YEAR);
         int lastOnlineYear = lastOnlineCal.get(java.util.Calendar.YEAR);
 
-        // Проверяем, был ли пользователь онлайн вчера
         boolean isYesterday = (currentDay - lastOnlineDay == 1 && currentYear == lastOnlineYear) ||
                 (currentDay == 1 && lastOnlineDay >= 365 && currentYear - lastOnlineYear == 1);
 
-        // Проверяем, был ли пользователь онлайн позавчера или раньше
         boolean isMoreThanTwoDays = (currentDay - lastOnlineDay > 1 && currentYear == lastOnlineYear) ||
                 (currentYear - lastOnlineYear > 0);
 
@@ -394,7 +848,6 @@ public class ChatActivity extends AppCompatActivity {
         } else if (isYesterday) {
             return "was online yesterday at " + (lastOnlineTime != null ? lastOnlineTime : "unknown time");
         } else if (isMoreThanTwoDays) {
-            // Для активности старше 2 дней показываем полную дату и время
             SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy 'at' HH:mm", Locale.getDefault());
             return "was online " + dateFormat.format(new Date(lastOnlineTimestamp));
         } else {
@@ -402,7 +855,6 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // ВАЖНО: Метод для отметки всех сообщений как прочитанных
     private void markAllMessagesAsRead() {
         if (chatId == null || otherUserId == null) {
             Log.e("ChatActivity", "chatId or otherUserId is null");
@@ -428,7 +880,6 @@ public class ChatActivity extends AppCompatActivity {
                             String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
                             Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
 
-                            // Отмечаем как прочитанные сообщения от другого пользователя, которые еще не прочитаны
                             if (messageId != null && ownerId != null &&
                                     ownerId.equals(currentOtherUserId) &&
                                     (isRead == null || !isRead)) {
@@ -442,11 +893,14 @@ public class ChatActivity extends AppCompatActivity {
                         if (!updates.isEmpty()) {
                             FirebaseDatabase.getInstance().getReference()
                                     .updateChildren(updates)
-                                    .addOnCompleteListener(task -> {
-                                        if (task.isSuccessful()) {
-                                            Log.d("ChatActivity", "Successfully marked " + markedAsRead[0] + " messages as read");
-                                        } else {
-                                            Log.e("ChatActivity", "Failed to mark messages as read", task.getException());
+                                    .addOnCompleteListener(new OnCompleteListener<Void>() {
+                                        @Override
+                                        public void onComplete(@NonNull Task<Void> task) {
+                                            if (task.isSuccessful()) {
+                                                Log.d("ChatActivity", "Successfully marked " + markedAsRead[0] + " messages as read");
+                                            } else {
+                                                Log.e("ChatActivity", "Failed to mark messages as read", task.getException());
+                                            }
                                         }
                                     });
                         }
@@ -515,7 +969,6 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // ВАЖНО: Исправленный метод отправки сообщения
     private void sendMessage() {
         String messageText = binding.messageEt.getText().toString().trim();
         if (messageText.isEmpty()) {
@@ -542,15 +995,14 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
-        // ВАЖНО: При отправке сообщения устанавливаем isRead = true только для отправителя
-        // Для получателя сообщение будет непрочитанным (isRead = false)
         HashMap<String, Object> messageInfo = new HashMap<>();
         messageInfo.put("id", messageKey);
         messageInfo.put("text", messageText);
         messageInfo.put("ownerId", currentUserId);
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
-        messageInfo.put("isRead", false); // ВАЖНО: по умолчанию сообщение непрочитанное
+        messageInfo.put("isRead", false);
+        messageInfo.put("messageType", "text");
 
         FirebaseDatabase.getInstance()
                 .getReference("Chats")
@@ -558,12 +1010,15 @@ public class ChatActivity extends AppCompatActivity {
                 .child("messages")
                 .child(messageKey)
                 .setValue(messageInfo)
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        updateLastMessageInChat(messageText, System.currentTimeMillis());
-                        Log.d("ChatActivity", "Message sent with isRead = false (will be marked as read by receiver)");
-                    } else {
-                        Toast.makeText(ChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
+                .addOnCompleteListener(new OnCompleteListener<Void>() {
+                    @Override
+                    public void onComplete(@NonNull Task<Void> task) {
+                        if (task.isSuccessful()) {
+                            updateLastMessageInChat(messageText, System.currentTimeMillis());
+                            Log.d("ChatActivity", "Message sent with isRead = false (will be marked as read by receiver)");
+                        } else {
+                            Toast.makeText(ChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
+                        }
                     }
                 });
     }
@@ -580,11 +1035,14 @@ public class ChatActivity extends AppCompatActivity {
                 .getReference("Chats")
                 .child(currentChatId)
                 .updateChildren(updateData)
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        Log.d("ChatActivity", "Last message updated: " + lastMessage);
-                    } else {
-                        Log.e("ChatActivity", "Failed to update last message", task.getException());
+                .addOnCompleteListener(new OnCompleteListener<Void>() {
+                    @Override
+                    public void onComplete(@NonNull Task<Void> task) {
+                        if (task.isSuccessful()) {
+                            Log.d("ChatActivity", "Last message updated: " + lastMessage);
+                        } else {
+                            Log.e("ChatActivity", "Failed to update last message", task.getException());
+                        }
                     }
                 });
     }
@@ -599,7 +1057,6 @@ public class ChatActivity extends AppCompatActivity {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         if (snapshot.exists()) {
-                            // Сохраняем оригинальные данные
                             originalUsername = snapshot.child("login").getValue(String.class);
                             if (originalUsername == null) {
                                 String email = snapshot.child("email").getValue(String.class);
@@ -615,7 +1072,6 @@ public class ChatActivity extends AppCompatActivity {
                                 originalProfileImage = "";
                             }
 
-                            // Сначала устанавливаем оригинальные данные
                             binding.chatUserName.setText(originalUsername);
 
                             if (originalProfileImage != null && !originalProfileImage.isEmpty()) {
@@ -628,10 +1084,8 @@ public class ChatActivity extends AppCompatActivity {
                                 binding.chatUserAvatar.setImageResource(R.drawable.artem);
                             }
 
-                            // Теперь загружаем кастомные настройки (они перезапишут оригинальные если есть)
                             loadCustomSettings();
 
-                            // Загружаем начальный статус
                             Boolean isOnline = snapshot.child("isOnline").getValue(Boolean.class);
                             Long lastOnline = snapshot.child("lastOnline").getValue(Long.class);
                             String lastOnlineTime = snapshot.child("lastOnlineTime").getValue(String.class);
@@ -664,7 +1118,6 @@ public class ChatActivity extends AppCompatActivity {
                                 String newOtherUserId = userId1.equals(currentCurrentUserId) ? userId2 : userId1;
                                 otherUserId = newOtherUserId;
 
-                                // Обновляем данные в адаптере
                                 if (messageAdapter != null) {
                                     messageAdapter.updateChatData(chatId, otherUserId);
                                 }
@@ -711,12 +1164,23 @@ public class ChatActivity extends AppCompatActivity {
                         String text = messageSnapshot.child("text").getValue(String.class);
                         String date = messageSnapshot.child("date").getValue(String.class);
                         Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
+                        String messageType = messageSnapshot.child("messageType").getValue(String.class);
+                        String fileUrl = messageSnapshot.child("fileUrl").getValue(String.class);
+                        String fileName = messageSnapshot.child("fileName").getValue(String.class);
 
-                        if (messageId != null && ownerId != null && text != null && date != null) {
+                        if (messageId != null && ownerId != null && date != null) {
                             Message message = new Message(messageId, ownerId, text, date);
+                            if (messageType != null) {
+                                message.setMessageType(messageType);
+                            }
+                            if (fileUrl != null) {
+                                message.setFileUrl(fileUrl);
+                            }
+                            if (fileName != null) {
+                                message.setFileName(fileName);
+                            }
                             messages.add(message);
 
-                            // Автоматически помечаем входящие сообщения как прочитанные при загрузке
                             if (ownerId.equals(currentOtherUserId) && (isRead == null || !isRead)) {
                                 markSingleMessageAsRead(messageId);
                             }
@@ -750,11 +1214,14 @@ public class ChatActivity extends AppCompatActivity {
                 .child(messageId)
                 .child("isRead")
                 .setValue(true)
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        Log.d("ChatActivity", "Message marked as read: " + messageId);
-                    } else {
-                        Log.e("ChatActivity", "Failed to mark message as read: " + messageId);
+                .addOnCompleteListener(new OnCompleteListener<Void>() {
+                    @Override
+                    public void onComplete(@NonNull Task<Void> task) {
+                        if (task.isSuccessful()) {
+                            Log.d("ChatActivity", "Message marked as read: " + messageId);
+                        } else {
+                            Log.e("ChatActivity", "Failed to mark message as read: " + messageId);
+                        }
                     }
                 });
     }
@@ -764,10 +1231,8 @@ public class ChatActivity extends AppCompatActivity {
         super.onResume();
         if (chatId != null && otherUserId != null) {
             markAllMessagesAsRead();
-            // При возвращении в чат обновляем кастомные настройки
             loadCustomSettings();
         }
-        // Обновляем онлайн статус при возвращении в приложение
         updateUserOnlineStatus();
     }
 
@@ -807,7 +1272,6 @@ public class ChatActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
 
-        // Очищаем onDisconnect при выходе
         if (currentUserId != null) {
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
@@ -816,7 +1280,6 @@ public class ChatActivity extends AppCompatActivity {
                     .cancel();
         }
 
-        // Очищаем слушатели
         if (messagesListener != null && chatId != null) {
             FirebaseDatabase.getInstance()
                     .getReference("Chats")
