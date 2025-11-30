@@ -8,6 +8,7 @@ import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -72,6 +73,12 @@ public class ProfileChatActivity extends AppCompatActivity {
         loadUserData();
     }
 
+    // В вашей активности или фрагменте
+    TextView nameTextView = findViewById(R.id.userNameEditText);
+    TextView usernameTextView = findViewById(R.id.ro6z69c8mirr);
+    TextView emailTextView = findViewById(R.id.rd6cte99r4eh);
+
+//
     private void initializeViews() {
         profileImage = findViewById(R.id.profileImage);
         userNameEditText = findViewById(R.id.userNameEditText);
