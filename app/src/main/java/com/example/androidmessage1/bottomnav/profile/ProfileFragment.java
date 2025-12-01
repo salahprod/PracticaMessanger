@@ -1,15 +1,19 @@
 package com.example.androidmessage1.bottomnav.profile;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.text.InputType;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResult;
@@ -22,7 +26,7 @@ import androidx.fragment.app.Fragment;
 
 import com.bumptech.glide.Glide;
 import com.example.androidmessage1.LoginActivity;
-import com.example.androidmessage1.MainActivity;
+import com.example.androidmessage1.R;
 import com.example.androidmessage1.databinding.FragmentProfileBinding;
 import com.google.android.gms.tasks.Continuation;
 import com.google.android.gms.tasks.OnCompleteListener;
@@ -68,7 +72,7 @@ public class ProfileFragment extends Fragment {
                             try {
                                 Bitmap bitmap = MediaStore.Images.Media.getBitmap(
                                         requireContext().getContentResolver(), filePath);
-                                binding.profileImageView.setImageBitmap(bitmap);
+                                binding.profileImage.setImageBitmap(bitmap);
                                 uploadImageSimple(); // запускаем загрузку
                             } catch (IOException e) {
                                 e.printStackTrace();
@@ -95,7 +99,7 @@ public class ProfileFragment extends Fragment {
 
         loadUserInfo();
 
-        binding.profileImageView.setOnClickListener(new View.OnClickListener() {
+        binding.profileImage.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 selectImage();
@@ -106,6 +110,21 @@ public class ProfileFragment extends Fragment {
             @Override
             public void onClick(View view) {
                 logoutUser();
+            }
+        });
+
+        // Обработка нажатия на имя пользователя
+        binding.userNameEditText.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showEditNameDialog();
+            }
+        });
+
+        binding.editNameBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showEditNameDialog();
             }
         });
 
@@ -126,23 +145,36 @@ public class ProfileFragment extends Fragment {
                         if (!snapshot.exists()) return;
 
                         // Загрузка имени пользователя
+                        String username = null;
                         if (snapshot.child("login").exists()) {
-                            String username = snapshot.child("login").getValue(String.class);
-                            if (username != null && !username.isEmpty()) {
-                                binding.usernameTv.setText(username);
-                            }
+                            username = snapshot.child("login").getValue(String.class);
                         } else if (snapshot.child("username").exists()) {
-                            String username = snapshot.child("username").getValue(String.class);
-                            if (username != null && !username.isEmpty()) {
-                                binding.usernameTv.setText(username);
-                            }
+                            username = snapshot.child("username").getValue(String.class);
+                        }
+
+                        if (username != null && !username.isEmpty()) {
+                            binding.userNameEditText.setText(username);
                         } else {
-                            // Если нет имени, используем email
+                            // Если нет имени, используем часть email или "User"
                             String email = snapshot.child("email").getValue(String.class);
                             if (email != null && email.contains("@")) {
-                                binding.usernameTv.setText(email.substring(0, email.indexOf("@")));
+                                binding.userNameEditText.setText(email.substring(0, email.indexOf("@")));
                             } else {
-                                binding.usernameTv.setText("User");
+                                binding.userNameEditText.setText("User");
+                            }
+                        }
+
+                        // Загрузка email пользователя
+                        String email = snapshot.child("email").getValue(String.class);
+                        if (email != null && !email.isEmpty()) {
+                            binding.rd6cte99r4eh.setText(email);
+                        } else {
+                            // Если нет email в базе, используем email из Firebase Auth
+                            String authEmail = FirebaseAuth.getInstance().getCurrentUser().getEmail();
+                            if (authEmail != null && !authEmail.isEmpty()) {
+                                binding.rd6cte99r4eh.setText(authEmail);
+                            } else {
+                                binding.rd6cte99r4eh.setText("No email provided");
                             }
                         }
 
@@ -152,9 +184,9 @@ public class ProfileFragment extends Fragment {
                             if (profileImage != null && !profileImage.isEmpty()) {
                                 Glide.with(requireContext())
                                         .load(profileImage)
-                                        .placeholder(com.example.androidmessage1.R.drawable.artem)
-                                        .error(com.example.androidmessage1.R.drawable.artem)
-                                        .into(binding.profileImageView);
+                                        .placeholder(R.drawable.artem)
+                                        .error(R.drawable.artem)
+                                        .into(binding.profileImage);
                             }
                         }
                     }
@@ -162,6 +194,64 @@ public class ProfileFragment extends Fragment {
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
                         Log.e(TAG, "Database error: " + error.getMessage());
+                    }
+                });
+    }
+
+    private void showEditNameDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
+        builder.setTitle("Edit Name");
+
+        final EditText input = new EditText(requireContext());
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        input.setText(binding.userNameEditText.getText().toString());
+        builder.setView(input);
+
+        builder.setPositiveButton("Save", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                String newName = input.getText().toString().trim();
+                if (!newName.isEmpty()) {
+                    updateUserName(newName);
+                } else {
+                    Toast.makeText(getContext(), "Name cannot be empty", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                dialog.cancel();
+            }
+        });
+
+        builder.show();
+    }
+
+    private void updateUserName(String newName) {
+        String userId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+
+        HashMap<String, Object> updates = new HashMap<>();
+        // Проверяем, какое поле используется для имени в вашей базе
+        updates.put("login", newName); // или "username" в зависимости от вашей структуры
+
+        FirebaseDatabase.getInstance().getReference()
+                .child("Users")
+                .child(userId)
+                .updateChildren(updates)
+                .addOnSuccessListener(new OnSuccessListener<Void>() {
+                    @Override
+                    public void onSuccess(Void unused) {
+                        binding.userNameEditText.setText(newName);
+                        Toast.makeText(getContext(), "Name updated successfully", Toast.LENGTH_SHORT).show();
+                        Log.d(TAG, "User name updated: " + newName);
+                    }
+                })
+                .addOnFailureListener(new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        Toast.makeText(getContext(), "Failed to update name: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        Log.e(TAG, "Failed to update name: " + e.getMessage());
                     }
                 });
     }
@@ -344,7 +434,7 @@ public class ProfileFragment extends Fragment {
                         // Обновляем изображение в UI
                         Glide.with(requireContext())
                                 .load(imageUrl)
-                                .into(binding.profileImageView);
+                                .into(binding.profileImage);
                     }
                 })
                 .addOnFailureListener(new OnFailureListener() {

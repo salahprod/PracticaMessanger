@@ -32,6 +32,7 @@ public class ProfileChatActivity extends AppCompatActivity {
 
     private ImageView profileImage;
     private EditText userNameEditText;
+    private TextView emailTextView; // Новое поле для email
     private ImageButton exitBtn;
     private String otherUserId;
     private String currentUserId;
@@ -40,6 +41,7 @@ public class ProfileChatActivity extends AppCompatActivity {
     private static final int PICK_IMAGE_REQUEST = 1;
     private String originalUsername = "";
     private String originalProfileImage = "";
+    private String originalEmail = ""; // Добавляем поле для email
     private boolean isDataLoaded = false;
 
     @Override
@@ -73,15 +75,10 @@ public class ProfileChatActivity extends AppCompatActivity {
         loadUserData();
     }
 
-    // В вашей активности или фрагменте
-    TextView nameTextView = findViewById(R.id.userNameEditText);
-    TextView usernameTextView = findViewById(R.id.ro6z69c8mirr);
-    TextView emailTextView = findViewById(R.id.rd6cte99r4eh);
-
-//
     private void initializeViews() {
         profileImage = findViewById(R.id.profileImage);
         userNameEditText = findViewById(R.id.userNameEditText);
+        emailTextView = findViewById(R.id.rd6cte99r4eh); // Находим TextView для email по id
         exitBtn = findViewById(R.id.exit_btn);
 
         // Клик на аватарку для выбора фото
@@ -175,20 +172,34 @@ public class ProfileChatActivity extends AppCompatActivity {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         if (snapshot.exists()) {
+                            // Получаем оригинальное имя пользователя
                             originalUsername = snapshot.child("login").getValue(String.class);
                             originalProfileImage = snapshot.child("profileImage").getValue(String.class);
+                            originalEmail = snapshot.child("email").getValue(String.class); // Получаем email
 
+                            // Если login не найден, пробуем username
                             if (originalUsername == null) {
-                                String email = snapshot.child("email").getValue(String.class);
-                                if (email != null && email.contains("@")) {
-                                    originalUsername = email.substring(0, email.indexOf("@"));
-                                } else {
-                                    originalUsername = "User";
-                                }
+                                originalUsername = snapshot.child("username").getValue(String.class);
+                            }
+
+                            // Если все еще нет имени, используем часть email
+                            if (originalUsername == null && originalEmail != null && originalEmail.contains("@")) {
+                                originalUsername = originalEmail.substring(0, originalEmail.indexOf("@"));
+                            } else if (originalUsername == null) {
+                                originalUsername = "User";
+                            }
+
+                            // Устанавливаем email в TextView
+                            if (originalEmail != null && !originalEmail.isEmpty()) {
+                                emailTextView.setText(originalEmail);
+                            } else {
+                                emailTextView.setText("No email available");
                             }
 
                             // Загружаем кастомные настройки
                             loadCustomizations();
+                        } else {
+                            Toast.makeText(ProfileChatActivity.this, "User not found", Toast.LENGTH_SHORT).show();
                         }
                     }
 
@@ -225,6 +236,12 @@ public class ProfileChatActivity extends AppCompatActivity {
                 // Устанавливаем данные в UI
                 userNameEditText.setText(displayName);
 
+                // Устанавливаем email (email всегда оригинальный, не меняется кастомно)
+                if (originalEmail != null && !originalEmail.isEmpty()) {
+                    emailTextView.setText(originalEmail);
+                }
+
+                // Устанавливаем аватар
                 if (displayImage != null && !displayImage.isEmpty()) {
                     Glide.with(ProfileChatActivity.this)
                             .load(displayImage)

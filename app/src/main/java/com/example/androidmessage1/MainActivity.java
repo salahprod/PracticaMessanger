@@ -30,6 +30,9 @@ public class MainActivity extends AppCompatActivity {
     private ActivityMainBinding binding;
     private static final String TAG = "MainActivity";
 
+    // Храним текущий выбранный фрагмент
+    private Fragment currentFragment;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -40,7 +43,6 @@ public class MainActivity extends AppCompatActivity {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
-
         });
 
         if(FirebaseAuth.getInstance().getCurrentUser() == null) {
@@ -52,18 +54,60 @@ public class MainActivity extends AppCompatActivity {
         // Устанавливаем пользователя онлайн при запуске приложения
         setUserOnline();
 
-        getSupportFragmentManager().beginTransaction().replace(binding.fragmentContainer.getId(),new FragmentChat()).commit();
+        // Начальный фрагмент - чаты
+        currentFragment = new FragmentChat();
+        getSupportFragmentManager().beginTransaction()
+                .replace(binding.fragmentContainer.getId(), currentFragment)
+                .commit();
+
         binding.bottomNav.setSelectedItemId(R.id.chats);
 
-        Map<Integer,Fragment> fragmentMap = new HashMap<>();
-        fragmentMap.put(R.id.chats,new FragmentChat());
-        fragmentMap.put(R.id.new_chat,new NewChatFragment());
-        fragmentMap.put(R.id.profile,new ProfileFragment());
+        // Создаем экземпляры фрагментов
+        FragmentChat fragmentChat = new FragmentChat();
+        NewChatFragment newChatFragment = new NewChatFragment();
+        ProfileFragment profileFragment = new ProfileFragment();
 
-        binding.bottomNav.setOnItemSelectedListener(item-> {
-            Fragment fragment = fragmentMap.get(item.getItemId());
-            getSupportFragmentManager().beginTransaction().replace(binding.fragmentContainer.getId(),fragment).commit();
-            return true;
+        Map<Integer, Fragment> fragmentMap = new HashMap<>();
+        fragmentMap.put(R.id.chats, fragmentChat);
+        fragmentMap.put(R.id.new_chat, newChatFragment);
+        fragmentMap.put(R.id.profile, profileFragment);
+
+        binding.bottomNav.setOnItemSelectedListener(item -> {
+            Fragment selectedFragment = fragmentMap.get(item.getItemId());
+
+            if (selectedFragment != null && selectedFragment != currentFragment) {
+                currentFragment = selectedFragment;
+
+                // Используем addToBackStack для сохранения состояния фрагментов
+                getSupportFragmentManager().beginTransaction()
+                        .replace(binding.fragmentContainer.getId(), selectedFragment)
+                        .addToBackStack(null)
+                        .commit();
+
+                return true;
+            }
+
+            return false;
+        });
+
+        // Обработка повторного нажатия на уже выбранный элемент
+        binding.bottomNav.setOnItemReselectedListener(item -> {
+            // Если повторно нажимаем на текущий элемент, можно обновить фрагмент
+            if (item.getItemId() == R.id.chats && currentFragment instanceof FragmentChat) {
+                // Перезагружаем чаты для обновления данных
+                FragmentChat refreshedFragment = new FragmentChat();
+                currentFragment = refreshedFragment;
+                getSupportFragmentManager().beginTransaction()
+                        .replace(binding.fragmentContainer.getId(), refreshedFragment)
+                        .commit();
+            } else if (item.getItemId() == R.id.profile && currentFragment instanceof ProfileFragment) {
+                // Перезагружаем профиль для обновления данных
+                ProfileFragment refreshedFragment = new ProfileFragment();
+                currentFragment = refreshedFragment;
+                getSupportFragmentManager().beginTransaction()
+                        .replace(binding.fragmentContainer.getId(), refreshedFragment)
+                        .commit();
+            }
         });
     }
 
@@ -158,7 +202,7 @@ public class MainActivity extends AppCompatActivity {
                 });
     }
 
-    // ВАЖНО: Публичный метод для выхода, который можно вызвать из фрагментов
+    // Метод для выхода, который можно вызвать из фрагментов
     public void logoutFromApp() {
         String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
         if (currentUserId != null) {
@@ -180,7 +224,7 @@ public class MainActivity extends AppCompatActivity {
         navigateToLogin();
     }
 
-    // ВАЖНО: Метод для отмены всех onDisconnect операций
+    // Метод для отмены всех onDisconnect операций
     private void cancelAllOnDisconnect(String userId) {
         FirebaseDatabase.getInstance().getReference("Users")
                 .child(userId)
@@ -209,7 +253,7 @@ public class MainActivity extends AppCompatActivity {
         Log.d(TAG, "All onDisconnect operations cancelled for user: " + userId);
     }
 
-    // ВАЖНО: Метод для установки статуса офлайн
+    // Метод для установки статуса офлайн
     private void setUserOffline(String userId) {
         long currentTime = System.currentTimeMillis();
 
@@ -244,11 +288,46 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    public void onBackPressed() {
+        // Если есть фрагменты в back stack, вернуться к предыдущему
+        if (getSupportFragmentManager().getBackStackEntryCount() > 0) {
+            getSupportFragmentManager().popBackStack();
+
+            // Обновляем текущий фрагмент
+            Fragment fragment = getSupportFragmentManager().findFragmentById(binding.fragmentContainer.getId());
+            if (fragment != null) {
+                currentFragment = fragment;
+
+                // Обновляем выбранный элемент в bottom navigation
+                if (fragment instanceof FragmentChat) {
+                    binding.bottomNav.setSelectedItemId(R.id.chats);
+                } else if (fragment instanceof NewChatFragment) {
+                    binding.bottomNav.setSelectedItemId(R.id.new_chat);
+                } else if (fragment instanceof ProfileFragment) {
+                    binding.bottomNav.setSelectedItemId(R.id.profile);
+                }
+            }
+        } else {
+            super.onBackPressed();
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         // Обновляем статус онлайн при возвращении в приложение
         if (FirebaseAuth.getInstance().getCurrentUser() != null) {
             setUserOnline();
+        }
+
+        // Обновляем текущий фрагмент при возвращении в приложение
+        if (currentFragment instanceof ProfileFragment) {
+            // Перезагружаем профиль для обновления данных
+            ProfileFragment refreshedFragment = new ProfileFragment();
+            currentFragment = refreshedFragment;
+            getSupportFragmentManager().beginTransaction()
+                    .replace(binding.fragmentContainer.getId(), refreshedFragment)
+                    .commit();
         }
     }
 

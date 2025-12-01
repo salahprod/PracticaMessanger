@@ -27,6 +27,7 @@ import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 import com.google.firebase.storage.FirebaseStorage;
@@ -36,6 +37,7 @@ import com.google.firebase.storage.UploadTask;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -54,6 +56,7 @@ public class ChatActivity extends AppCompatActivity {
     private String currentUserId;
     private Handler statusUpdateHandler;
     private Runnable statusUpdateRunnable;
+    private DatabaseReference chatRef;
 
     // Переменные для хранения оригинальных данных
     private String originalUsername = "";
@@ -78,9 +81,15 @@ public class ChatActivity extends AppCompatActivity {
         otherUserId = getIntent().getStringExtra("otherUserId");
         currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
-        if (chatId == null) {
-            Toast.makeText(this, "Chat ID is null", Toast.LENGTH_SHORT).show();
+        if (chatId == null && otherUserId == null) {
+            Toast.makeText(this, "Chat data is missing", Toast.LENGTH_SHORT).show();
             finish();
+            return;
+        }
+
+        // Если chatId не передан, но есть otherUserId, находим или создаем чат
+        if (chatId == null && otherUserId != null) {
+            findOrCreateChat();
             return;
         }
 
@@ -99,6 +108,102 @@ public class ChatActivity extends AppCompatActivity {
             markAllMessagesAsRead();
             startUserStatusTracking();
         }
+    }
+
+    private void findOrCreateChat() {
+        DatabaseReference chatsRef = FirebaseDatabase.getInstance().getReference("Chats");
+
+        chatsRef.orderByChild("participants/" + currentUserId).equalTo(true)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        String foundChatId = null;
+
+                        // Ищем существующий чат между двумя пользователями
+                        for (DataSnapshot chatSnapshot : snapshot.getChildren()) {
+                            String user1 = chatSnapshot.child("user1").getValue(String.class);
+                            String user2 = chatSnapshot.child("user2").getValue(String.class);
+
+                            if ((user1 != null && user2 != null) &&
+                                    ((user1.equals(currentUserId) && user2.equals(otherUserId)) ||
+                                            (user2.equals(currentUserId) && user1.equals(otherUserId)))) {
+                                foundChatId = chatSnapshot.getKey();
+                                break;
+                            }
+                        }
+
+                        if (foundChatId != null) {
+                            // Чат найден, используем существующий
+                            chatId = foundChatId;
+                            initializeAfterChatFound();
+                        } else {
+                            // Чат не найден, создаем новый
+                            createNewChat();
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Toast.makeText(ChatActivity.this, "Error finding chat", Toast.LENGTH_SHORT).show();
+                        finish();
+                    }
+                });
+    }
+
+    private void createNewChat() {
+        chatRef = FirebaseDatabase.getInstance().getReference("Chats").push();
+        chatId = chatRef.getKey();
+
+        HashMap<String, Object> chatData = new HashMap<>();
+        chatData.put("user1", currentUserId);
+        chatData.put("user2", otherUserId);
+        chatData.put("LastMessage", "");
+        chatData.put("LastMessageTime", System.currentTimeMillis());
+        chatData.put("lastMessageTimestamp", System.currentTimeMillis());
+
+        // Создаем структуру участников для удобного поиска
+        HashMap<String, Object> participants = new HashMap<>();
+        participants.put(currentUserId, true);
+        participants.put(otherUserId, true);
+        chatData.put("participants", participants);
+
+        chatRef.setValue(chatData).addOnCompleteListener(new OnCompleteListener<Void>() {
+            @Override
+            public void onComplete(@NonNull Task<Void> task) {
+                if (task.isSuccessful()) {
+                    // Также обновляем информацию о чатах у пользователей
+                    updateUserChatLists();
+                    initializeAfterChatFound();
+                } else {
+                    Toast.makeText(ChatActivity.this, "Failed to create chat", Toast.LENGTH_SHORT).show();
+                    finish();
+                }
+            }
+        });
+    }
+
+    private void updateUserChatLists() {
+        // Добавляем информацию о чате для обоих пользователей
+        DatabaseReference userChatsRef1 = FirebaseDatabase.getInstance().getReference("UserChats")
+                .child(currentUserId)
+                .child(chatId);
+        userChatsRef1.setValue(true);
+
+        DatabaseReference userChatsRef2 = FirebaseDatabase.getInstance().getReference("UserChats")
+                .child(otherUserId)
+                .child(chatId);
+        userChatsRef2.setValue(true);
+    }
+
+    private void initializeAfterChatFound() {
+        updateUserOnlineStatus();
+        initializeViews();
+        loadOtherUserData();
+        loadCustomSettings();
+        loadMessages();
+        setupKeyboardBehavior();
+        markAllMessagesAsRead();
+        startUserStatusTracking();
     }
 
     private void updateUserOnlineStatus() {
@@ -453,6 +558,11 @@ public class ChatActivity extends AppCompatActivity {
 
         if (selectedFiles.isEmpty()) {
             Toast.makeText(this, "No files selected", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (chatId == null) {
+            Toast.makeText(this, "Chat not initialized", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -976,6 +1086,11 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
+        if (chatId == null) {
+            Toast.makeText(this, "Chat not initialized", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm");
         String date = dateFormat.format(new Date());
 
@@ -1186,6 +1301,18 @@ public class ChatActivity extends AppCompatActivity {
                             }
                         }
                     }
+
+                    // Сортируем сообщения по времени
+                    Collections.sort(messages, (m1, m2) -> {
+                        try {
+                            SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy HH:mm");
+                            Date date1 = sdf.parse(m1.getDate());
+                            Date date2 = sdf.parse(m2.getDate());
+                            return date1.compareTo(date2);
+                        } catch (Exception e) {
+                            return 0;
+                        }
+                    });
                 }
 
                 messageAdapter.notifyDataSetChanged();

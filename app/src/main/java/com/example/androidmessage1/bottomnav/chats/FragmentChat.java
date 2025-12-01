@@ -29,8 +29,10 @@ import com.google.firebase.database.ValueEventListener;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class FragmentChat extends Fragment {
     private FragmentChatsBinding binding;
@@ -45,6 +47,10 @@ public class FragmentChat extends Fragment {
     private String currentUserId;
     private boolean isFragmentDestroyed = false;
 
+    // Карта для отслеживания чатов между пользователями
+    private Map<String, String> userPairToChatId = new HashMap<>();
+    private Set<String> processedChats = new HashSet<>();
+
     // Кэш для хранения предыдущих данных для микрообновления
     private Map<String, String> previousGroupImages = new HashMap<>();
     private Map<String, String> previousGroupNames = new HashMap<>();
@@ -57,6 +63,10 @@ public class FragmentChat extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         binding = FragmentChatsBinding.inflate(inflater, container, false);
         isFragmentDestroyed = false;
+
+        // Очищаем карты при создании вью
+        userPairToChatId.clear();
+        processedChats.clear();
 
         try {
             currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
@@ -133,28 +143,12 @@ public class FragmentChat extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (isFragmentDestroyed || binding == null) return;
 
-                Log.d("FragmentChat", "Chats data changed, total chats: " + snapshot.getChildrenCount());
+                Log.d("FragmentChat", "Chats data changed, total chats in DB: " + snapshot.getChildrenCount());
 
-                // Очищаем старые слушатели чатов
-                for (ValueEventListener listener : chatListeners.values()) {
-                    FirebaseDatabase.getInstance().getReference("Chats").removeEventListener(listener);
-                }
-                chatListeners.clear();
+                // Очищаем карту пар пользователей
+                userPairToChatId.clear();
 
-                // Создаем временный список для новых чатов
-                List<Chat> newChats = new ArrayList<>();
-                Map<String, Chat> currentChatsMap = new HashMap<>();
-
-                // Собираем текущие приватные чаты
-                for (Chat chat : combinedChats) {
-                    if (!chat.isGroup()) {
-                        currentChatsMap.put(chat.getChat_id(), chat);
-                    } else {
-                        newChats.add(chat); // Сохраняем группы
-                    }
-                }
-
-                // Обрабатываем новые чаты
+                // Собираем все чаты и строим карту пар пользователей
                 for (DataSnapshot chatSnapshot : snapshot.getChildren()) {
                     if (isFragmentDestroyed) return;
 
@@ -166,23 +160,15 @@ public class FragmentChat extends Fragment {
 
                     if (user1 == null || user2 == null) continue;
 
-                    if (user1.equals(currentUserId) || user2.equals(currentUserId)) {
-                        String otherUserId = user1.equals(currentUserId) ? user2 : user1;
+                    // Создаем уникальный ключ для пары пользователей (сортированный)
+                    String userPairKey = getSortedUserPairKey(user1, user2);
+                    userPairToChatId.put(userPairKey, chatId);
 
-                        // Если чат уже существует, обновляем его, иначе создаем новый
-                        Chat existingChat = currentChatsMap.get(chatId);
-                        if (existingChat != null) {
-                            newChats.add(existingChat);
-                        } else {
-                            setupChatListener(chatId, otherUserId);
-                        }
-                    }
+                    Log.d("FragmentChat", "Mapped user pair " + userPairKey + " to chat: " + chatId);
                 }
 
-                // Обновляем список
-                combinedChats.clear();
-                combinedChats.addAll(newChats);
-                sortChats();
+                // Теперь обрабатываем чаты для текущего пользователя
+                processChatsForCurrentUser();
             }
 
             @Override
@@ -194,6 +180,72 @@ public class FragmentChat extends Fragment {
 
         FirebaseDatabase.getInstance().getReference("Chats")
                 .addValueEventListener(chatsListListener);
+    }
+
+    private String getSortedUserPairKey(String user1, String user2) {
+        // Сортируем ID пользователей для создания уникального ключа независимо от порядка
+        if (user1.compareTo(user2) < 0) {
+            return user1 + "_" + user2;
+        } else {
+            return user2 + "_" + user1;
+        }
+    }
+
+    private void processChatsForCurrentUser() {
+        if (currentUserId == null) return;
+
+        Log.d("FragmentChat", "Processing chats for current user: " + currentUserId);
+
+        // Очищаем старые слушатели чатов
+        for (ValueEventListener listener : chatListeners.values()) {
+            FirebaseDatabase.getInstance().getReference("Chats").removeEventListener(listener);
+        }
+        chatListeners.clear();
+
+        // Очищаем список обработанных чатов
+        processedChats.clear();
+
+        // Создаем временный список для новых чатов
+        List<Chat> newChats = new ArrayList<>();
+        Map<String, Chat> currentChatsMap = new HashMap<>();
+
+        // Собираем текущие приватные чаты
+        for (Chat chat : combinedChats) {
+            if (!chat.isGroup()) {
+                currentChatsMap.put(chat.getChat_id(), chat);
+            } else {
+                newChats.add(chat); // Сохраняем группы
+            }
+        }
+
+        // Ищем чаты, где участвует текущий пользователь
+        for (Map.Entry<String, String> entry : userPairToChatId.entrySet()) {
+            String userPairKey = entry.getKey();
+            String chatId = entry.getValue();
+
+            // Проверяем, участвует ли текущий пользователь в этой паре
+            if (userPairKey.contains(currentUserId + "_") || userPairKey.endsWith("_" + currentUserId)) {
+
+                // Разбираем пару пользователей
+                String[] users = userPairKey.split("_");
+                String otherUserId = users[0].equals(currentUserId) ? users[1] : users[0];
+
+                // Если чат уже существует, обновляем его, иначе создаем новый
+                Chat existingChat = currentChatsMap.get(chatId);
+                if (existingChat != null) {
+                    newChats.add(existingChat);
+                    processedChats.add(chatId);
+                } else if (!processedChats.contains(chatId)) {
+                    setupChatListener(chatId, otherUserId);
+                    processedChats.add(chatId);
+                }
+            }
+        }
+
+        // Обновляем список
+        combinedChats.clear();
+        combinedChats.addAll(newChats);
+        sortChats();
     }
 
     private void loadGroups() {
@@ -567,7 +619,7 @@ public class FragmentChat extends Fragment {
         FirebaseDatabase.getInstance().getReference("Chats").child(chatId)
                 .addValueEventListener(chatListener);
 
-        Log.d("FragmentChat", "Chat listener SETUP for: " + chatId);
+        Log.d("FragmentChat", "Chat listener SETUP for: " + chatId + " with other user: " + otherUserId);
     }
 
     // МЕТОД: Загрузка кастомных настроек с микрообновлением
@@ -706,6 +758,7 @@ public class FragmentChat extends Fragment {
 
         int existingIndex = -1;
 
+        // Ищем чат с таким же ID
         for (int i = 0; i < combinedChats.size(); i++) {
             Chat chat = combinedChats.get(i);
             if (!chat.isGroup() && chat.getChat_id().equals(chatId)) {
@@ -740,9 +793,26 @@ public class FragmentChat extends Fragment {
                 Log.d("FragmentChat", "Chat UI UPDATED at position: " + existingIndex);
             }
         } else {
-            combinedChats.add(newChat);
-            needsUpdate = true;
-            Log.d("FragmentChat", "New chat ADDED: " + newChatName);
+            // Проверяем, нет ли дубликата чата с тем же другим пользователем
+            String otherUserId = newChat.getOther_user_id();
+            for (int i = 0; i < combinedChats.size(); i++) {
+                Chat chat = combinedChats.get(i);
+                if (!chat.isGroup() && chat.getOther_user_id().equals(otherUserId)) {
+                    // Нашли дубликат - заменяем старый чат новым
+                    combinedChats.set(i, newChat);
+                    existingIndex = i;
+                    needsUpdate = true;
+                    Log.d("FragmentChat", "Replaced duplicate chat for user: " + otherUserId +
+                            " with chat ID: " + chatId);
+                    break;
+                }
+            }
+
+            if (existingIndex == -1) {
+                combinedChats.add(newChat);
+                needsUpdate = true;
+                Log.d("FragmentChat", "New chat ADDED: " + newChatName + " for user: " + otherUserId);
+            }
         }
 
         // Сохраняем текущие данные для будущих сравнений
@@ -881,8 +951,10 @@ public class FragmentChat extends Fragment {
         groupListeners.clear();
         customSettingsListeners.clear();
         groupCustomSettingsListeners.clear();
+        userPairToChatId.clear();
+        processedChats.clear();
 
-        Log.d("FragmentChat", "All listeners cleared");
+        Log.d("FragmentChat", "All listeners and maps cleared");
         binding = null;
     }
 }
