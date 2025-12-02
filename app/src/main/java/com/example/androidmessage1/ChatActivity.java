@@ -2,6 +2,7 @@ package com.example.androidmessage1;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -18,6 +19,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.bumptech.glide.Glide;
+import com.caverock.androidsvg.SVG;
+import com.caverock.androidsvg.SVGParseException;
 import com.example.androidmessage1.databinding.ActivityChatBinding;
 import com.example.androidmessage1.message.Message;
 import com.example.androidmessage1.message.MessageAdapter;
@@ -68,12 +71,18 @@ public class ChatActivity extends AppCompatActivity {
     // Константы для выбора файлов
     private static final int PICK_FILE_REQUEST = 1001;
     private static final int FONT_SIZE_SETTINGS_REQUEST = 1002;
+    private static final int WALLPAPER_SELECTOR_REQUEST = 1003;
 
     // Переменные для хранения выбранных файлов
     private List<Uri> selectedFiles = new ArrayList<>();
     private boolean isSendingFiles = false;
     private int totalFilesToSend = 0;
     private int successfullySentFiles = 0;
+
+    // Переменные для обоев чата
+    private static final String WALLPAPER_PREFS = "chat_wallpaper_prefs";
+    private static final String WALLPAPER_KEY_PREFIX = "wallpaper_";
+    private SharedPreferences wallpaperPrefs;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,6 +99,9 @@ public class ChatActivity extends AppCompatActivity {
             finish();
             return;
         }
+
+        // Инициализируем SharedPreferences для обоев
+        wallpaperPrefs = getSharedPreferences(WALLPAPER_PREFS, Context.MODE_PRIVATE);
 
         // Если chatId не передан, но есть otherUserId, находим или создаем чат
         if (chatId == null && otherUserId != null) {
@@ -112,6 +124,122 @@ public class ChatActivity extends AppCompatActivity {
             markAllMessagesAsRead();
             startUserStatusTracking();
         }
+
+        // Загружаем обои при создании активности
+        loadChatWallpaper();
+    }
+
+    // Метод для загрузки обоев чата
+    // Метод для загрузки обоев чата с поддержкой SVG
+    private void loadChatWallpaper() {
+        if (chatId == null) return;
+
+        String wallpaperResourceName = wallpaperPrefs.getString(WALLPAPER_KEY_PREFIX + chatId, null);
+
+        if (wallpaperResourceName != null) {
+            // Для SVG файлов
+            int wallpaperResId = getResources().getIdentifier(wallpaperResourceName, "drawable", getPackageName());
+
+            if (wallpaperResId != 0) {
+                try {
+                    // Загружаем SVG файл
+                    SVG svg = SVG.getFromResource(this, wallpaperResId);
+
+                    // Создаем Picture из SVG
+                    android.graphics.Picture picture = svg.renderToPicture();
+
+                    // Создаем Drawable из Picture
+                    android.graphics.drawable.PictureDrawable drawable =
+                            new android.graphics.drawable.PictureDrawable(picture);
+
+                    // Устанавливаем фон
+                    binding.main.setBackground(drawable);
+
+                } catch (SVGParseException e) {
+                    Log.e("ChatActivity", "Error parsing SVG wallpaper: " + wallpaperResourceName, e);
+                    // В случае ошибки пробуем загрузить как обычный drawable
+                    try {
+                        binding.main.setBackgroundResource(wallpaperResId);
+                    } catch (Exception ex) {
+                        // Если и это не работает, используем белый фон
+                        binding.main.setBackgroundColor(getResources().getColor(android.R.color.white));
+                    }
+                }
+            } else {
+                // Если ресурс не найден, используем белый фон
+                binding.main.setBackgroundColor(getResources().getColor(android.R.color.white));
+            }
+        } else {
+            // Если обои не выбраны, используем белый фон
+            binding.main.setBackgroundColor(getResources().getColor(android.R.color.white));
+        }
+    }
+
+    // Метод для открытия селектора обоев
+    private void openWallpaperSelector() {
+        if (chatId == null) {
+            Toast.makeText(this, "Chat not initialized", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Intent intent = new Intent(ChatActivity.this, WallpaperSelectorActivity.class);
+        intent.putExtra("chatId", chatId);
+        startActivityForResult(intent, WALLPAPER_SELECTOR_REQUEST);
+    }
+
+    // Метод для настройки кнопки выбора обоев
+    private void setupWallpaperButton() {
+        // Добавляем кнопку в тулбар или используем долгое нажатие на аватар
+        binding.chatUserAvatar.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                showWallpaperOptionsMenu();
+                return true;
+            }
+        });
+
+        // Или добавляем пункт меню в диалоговое окно
+        binding.chatUserName.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                showWallpaperOptionsMenu();
+                return true;
+            }
+        });
+    }
+
+    // Метод для показа меню выбора обоев
+    private void showWallpaperOptionsMenu() {
+        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
+        builder.setTitle("Обои чата");
+        builder.setItems(new String[]{"Изменить обои", "Удалить обои", "Отмена"}, (dialog, which) -> {
+            switch (which) {
+                case 0:
+                    openWallpaperSelector();
+                    break;
+                case 1:
+                    clearChatWallpaper();
+                    break;
+                case 2:
+                    dialog.dismiss();
+                    break;
+            }
+        });
+        builder.show();
+    }
+
+    // Метод для очистки обоев
+    private void clearChatWallpaper() {
+        if (chatId == null) return;
+
+        SharedPreferences.Editor editor = wallpaperPrefs.edit();
+        editor.remove(WALLPAPER_KEY_PREFIX + chatId);
+        editor.apply();
+
+        // Сбрасываем фон на белый
+        binding.main.setBackgroundColor(getResources().getColor(android.R.color.white));
+
+        Toast.makeText(this, "Wallpaper cleared", Toast.LENGTH_SHORT).show();
     }
 
     // Метод для обновления онлайн статуса
@@ -243,6 +371,9 @@ public class ChatActivity extends AppCompatActivity {
         setupKeyboardBehavior();
         markAllMessagesAsRead();
         startUserStatusTracking();
+
+        // Загружаем обои
+        loadChatWallpaper();
     }
 
     private void initializeViews() {
@@ -303,6 +434,9 @@ public class ChatActivity extends AppCompatActivity {
 
         // Добавляем кнопку для настроек шрифта
         setupFontSizeButton();
+
+        // Добавляем кнопку/меню для выбора обоев
+        setupWallpaperButton();
 
         // Настройка RecyclerView для превью выбранных файлов
         setupSelectedFilesPreview();
@@ -655,6 +789,9 @@ public class ChatActivity extends AppCompatActivity {
                 if (messageAdapter != null) {
                     messageAdapter.updateFontSize();
                 }
+            } else if (requestCode == WALLPAPER_SELECTOR_REQUEST) {
+                // При возвращении из селектора обоев обновляем фон
+                loadChatWallpaper();
             }
         }
     }
@@ -1433,6 +1570,9 @@ public class ChatActivity extends AppCompatActivity {
             if (messageAdapter != null) {
                 messageAdapter.updateFontSize();
             }
+
+            // Обновляем обои при возвращении в чат
+            loadChatWallpaper();
         }
         // Обновляем онлайн статус при возвращении в приложение
         updateUserOnlineStatus();

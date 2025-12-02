@@ -2,6 +2,7 @@ package com.example.androidmessage1.groups;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -18,6 +19,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.bumptech.glide.Glide;
 import com.example.androidmessage1.R;
+import com.example.androidmessage1.WallpaperSelectorActivity;
 import com.example.androidmessage1.databinding.ActivityGroupChatBinding;
 import com.example.androidmessage1.groups.messages.GroupMessage;
 import com.example.androidmessage1.groups.messages.GroupMessageAdapter;
@@ -62,12 +64,18 @@ public class GroupChatActivity extends AppCompatActivity {
 
     // Константы для выбора файлов
     private static final int PICK_FILE_REQUEST = 1001;
+    private static final int WALLPAPER_SELECTOR_REQUEST = 1003;
 
     // Переменные для хранения выбранных файлов
     private List<Uri> selectedFiles = new ArrayList<>();
     private boolean isSendingFiles = false;
     private int totalFilesToSend = 0;
     private int successfullySentFiles = 0;
+
+    // Переменные для обоев группы
+    private static final String WALLPAPER_PREFS = "chat_wallpaper_prefs";
+    private static final String WALLPAPER_KEY_PREFIX = "wallpaper_";
+    private SharedPreferences wallpaperPrefs;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,6 +94,8 @@ public class GroupChatActivity extends AppCompatActivity {
         }
 
         groupRef = FirebaseDatabase.getInstance().getReference("Groups").child(groupId);
+        // Инициализируем SharedPreferences для обоев
+        wallpaperPrefs = getSharedPreferences(WALLPAPER_PREFS, Context.MODE_PRIVATE);
 
         Log.d("GroupChatActivity", "Opening group: " + groupId);
         Log.d("GroupChatActivity", "Current user: " + currentUserId);
@@ -96,6 +106,7 @@ public class GroupChatActivity extends AppCompatActivity {
         setupCurrentUserOnlineStatus();
         markAllMessagesAsRead();
         checkUserRole();
+        loadGroupWallpaper(); // Загружаем обои группы при создании
 
         binding.sendMessageBtn.setOnClickListener(v -> {
             if (!selectedFiles.isEmpty()) {
@@ -110,8 +121,138 @@ public class GroupChatActivity extends AppCompatActivity {
         binding.groupImage.setOnClickListener(v -> openGroupSettings());
         binding.groupName.setOnClickListener(v -> openGroupSettings());
 
+        // Настраиваем долгое нажатие для меню обоев
+        setupWallpaperButton();
+
         // Настройка превью выбранных файлов
         setupSelectedFilesPreview();
+    }
+
+    // МЕТОД: Загрузка обоев группы с поддержкой SVG
+    private void loadGroupWallpaper() {
+        if (groupId == null) return;
+
+        // Используем тот же ключ, что и для обычных чатов, но с префиксом "group_"
+        String wallpaperResourceName = wallpaperPrefs.getString(WALLPAPER_KEY_PREFIX + "group_" + groupId, null);
+
+        if (wallpaperResourceName != null) {
+            // Для SVG файлов
+            int wallpaperResId = getResources().getIdentifier(wallpaperResourceName, "drawable", getPackageName());
+
+            if (wallpaperResId != 0) {
+                try {
+                    // Загружаем SVG файл
+                    com.caverock.androidsvg.SVG svg = com.caverock.androidsvg.SVG.getFromResource(this, wallpaperResId);
+
+                    // Создаем Picture из SVG
+                    android.graphics.Picture picture = svg.renderToPicture();
+
+                    // Создаем Drawable из Picture
+                    android.graphics.drawable.PictureDrawable drawable =
+                            new android.graphics.drawable.PictureDrawable(picture);
+
+                    // Устанавливаем фон для всей активности
+                    binding.getRoot().setBackground(drawable);
+
+                } catch (com.caverock.androidsvg.SVGParseException e) {
+                    Log.e("GroupChatActivity", "Error parsing SVG wallpaper: " + wallpaperResourceName, e);
+                    // В случае ошибки пробуем загрузить как обычный drawable
+                    try {
+                        binding.getRoot().setBackgroundResource(wallpaperResId);
+                    } catch (Exception ex) {
+                        // Если и это не работает, используем белый фон
+                        binding.getRoot().setBackgroundColor(getResources().getColor(android.R.color.white));
+                    }
+                }
+            } else {
+                // Если ресурс не найден, используем белый фон
+                binding.getRoot().setBackgroundColor(getResources().getColor(android.R.color.white));
+            }
+        } else {
+            // Если обои не выбраны, используем белый фон
+            binding.getRoot().setBackgroundColor(getResources().getColor(android.R.color.white));
+        }
+    }
+
+    // МЕТОД: Настройка кнопки выбора обоев
+    private void setupWallpaperButton() {
+        // Добавляем долгое нажатие на аватар группы
+        binding.groupImage.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                showWallpaperOptionsMenu();
+                return true;
+            }
+        });
+
+        // Или добавляем долгое нажатие на название группы
+        binding.groupName.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                showWallpaperOptionsMenu();
+                return true;
+            }
+        });
+    }
+
+    // МЕТОД: Показать меню выбора обоев
+    private void showWallpaperOptionsMenu() {
+        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
+        builder.setTitle("Обои группы");
+        builder.setItems(new String[]{"Изменить обои", "Удалить обои", "Отмена"}, (dialog, which) -> {
+            switch (which) {
+                case 0:
+                    openWallpaperSelector();
+                    break;
+                case 1:
+                    clearGroupWallpaper();
+                    break;
+                case 2:
+                    dialog.dismiss();
+                    break;
+            }
+        });
+        builder.show();
+    }
+
+    // МЕТОД: Открытие селектора обоев
+    private void openWallpaperSelector() {
+        if (groupId == null) {
+            Toast.makeText(this, "Group not initialized", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Intent intent = new Intent(GroupChatActivity.this, WallpaperSelectorActivity.class);
+        intent.putExtra("chatId", "group_" + groupId); // Используем префикс для групп
+        startActivityForResult(intent, WALLPAPER_SELECTOR_REQUEST);
+    }
+
+    // МЕТОД: Очистка обоев группы
+    private void clearGroupWallpaper() {
+        if (groupId == null) return;
+
+        SharedPreferences.Editor editor = wallpaperPrefs.edit();
+        editor.remove(WALLPAPER_KEY_PREFIX + "group_" + groupId);
+        editor.apply();
+
+        // Сбрасываем фон на белый
+        binding.getRoot().setBackgroundColor(getResources().getColor(android.R.color.white));
+
+        Toast.makeText(this, "Wallpaper cleared", Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (resultCode == RESULT_OK) {
+            if (requestCode == PICK_FILE_REQUEST) {
+                handleSelectedFiles(data);
+            } else if (requestCode == WALLPAPER_SELECTOR_REQUEST) {
+                // При возвращении из селектора обоев обновляем фон
+                loadGroupWallpaper();
+            }
+        }
     }
 
     @Override
@@ -124,6 +265,8 @@ public class GroupChatActivity extends AppCompatActivity {
         }
         // ОБНОВЛЯЕМ РАЗМЕР ШРИФТА ПРИ ВОЗВРАЩЕНИИ НА ЭКРАН
         updateFontSize();
+        // Обновляем обои при возвращении на экран
+        loadGroupWallpaper();
     }
 
     // МЕТОД ДЛЯ ОБНОВЛЕНИЯ РАЗМЕРА ШРИФТА
@@ -213,17 +356,6 @@ public class GroupChatActivity extends AppCompatActivity {
             startActivityForResult(Intent.createChooser(intent, "Select Files"), PICK_FILE_REQUEST);
         } catch (android.content.ActivityNotFoundException ex) {
             Toast.makeText(this, "No file manager available", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-
-        if (resultCode == RESULT_OK) {
-            if (requestCode == PICK_FILE_REQUEST) {
-                handleSelectedFiles(data);
-            }
         }
     }
 

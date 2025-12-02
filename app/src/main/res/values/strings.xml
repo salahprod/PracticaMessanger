@@ -8,4 +8,10 @@
     <string name="selected_files_count">Выбрано файлов: 0</string>
     <string name="clear">Очистить</string>
     <string name="type_message_hint">Type your message...</string>
+    <string name="select_wallpaper">Select Wallpaper</string>
+    <string name="clear_wallpaper">Clear</string>
+    <string name="back">Back</string>
+    <string name="wallpaper">Wallpaper</string>
+    <string name="change_wallpaper">Change Wallpaper</string>
+    <string name="clear_wallpaper_title">Clear Wallpaper</string>
 </resources>
