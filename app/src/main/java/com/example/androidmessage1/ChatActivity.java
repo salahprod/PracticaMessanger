@@ -102,11 +102,46 @@ public class ChatActivity extends AppCompatActivity {
             getOtherUserIdFromChat();
         } else {
             loadOtherUserData();
-            loadCustomSettings();
+            loadCustomSettings(); // Загружаем кастомные настройки
             loadMessages();
             setupKeyboardBehavior();
             markAllMessagesAsRead();
             startUserStatusTracking();
+        }
+    }
+
+    // Метод для обновления онлайн статуса
+    private void updateUserOnlineStatus() {
+        if (currentUserId != null) {
+            // Устанавливаем текущего пользователя онлайн
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("isOnline")
+                    .setValue(true);
+
+            // Устанавливаем время последней активности
+            long currentTime = System.currentTimeMillis();
+            SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
+            SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy", Locale.getDefault());
+
+            String currentTimeStr = timeFormat.format(new Date(currentTime));
+            String currentDateStr = dateFormat.format(new Date(currentTime));
+
+            HashMap<String, Object> updateData = new HashMap<>();
+            updateData.put("lastOnline", currentTime);
+            updateData.put("lastOnlineTime", currentTimeStr);
+            updateData.put("lastOnlineDate", currentDateStr);
+
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .updateChildren(updateData);
+
+            // Устанавливаем слушатель для автоматического установки офлайн статуса при выходе
+            FirebaseDatabase.getInstance().getReference("Users")
+                    .child(currentUserId)
+                    .child("isOnline")
+                    .onDisconnect()
+                    .setValue(false);
         }
     }
 
@@ -199,42 +234,11 @@ public class ChatActivity extends AppCompatActivity {
         updateUserOnlineStatus();
         initializeViews();
         loadOtherUserData();
-        loadCustomSettings();
+        loadCustomSettings(); // Загружаем кастомные настройки
         loadMessages();
         setupKeyboardBehavior();
         markAllMessagesAsRead();
         startUserStatusTracking();
-    }
-
-    private void updateUserOnlineStatus() {
-        if (currentUserId != null) {
-            FirebaseDatabase.getInstance().getReference("Users")
-                    .child(currentUserId)
-                    .child("isOnline")
-                    .setValue(true);
-
-            long currentTime = System.currentTimeMillis();
-            SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
-            SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy", Locale.getDefault());
-
-            String currentTimeStr = timeFormat.format(new Date(currentTime));
-            String currentDateStr = dateFormat.format(new Date(currentTime));
-
-            HashMap<String, Object> updateData = new HashMap<>();
-            updateData.put("lastOnline", currentTime);
-            updateData.put("lastOnlineTime", currentTimeStr);
-            updateData.put("lastOnlineDate", currentDateStr);
-
-            FirebaseDatabase.getInstance().getReference("Users")
-                    .child(currentUserId)
-                    .updateChildren(updateData);
-
-            FirebaseDatabase.getInstance().getReference("Users")
-                    .child(currentUserId)
-                    .child("isOnline")
-                    .onDisconnect()
-                    .setValue(false);
-        }
     }
 
     private void initializeViews() {
@@ -295,6 +299,108 @@ public class ChatActivity extends AppCompatActivity {
 
         // Настройка RecyclerView для превью выбранных файлов
         setupSelectedFilesPreview();
+    }
+
+    // ДОБАВЛЕННЫЙ МЕТОД: Открытие настроек профиля чата
+    private void openProfileSettings() {
+        if (otherUserId != null && chatId != null) {
+            Intent intent = new Intent(ChatActivity.this, ProfileChatActivity.class);
+            intent.putExtra("otherUserId", otherUserId);
+            intent.putExtra("chatId", chatId);
+            startActivity(intent);
+        } else {
+            Toast.makeText(this, "Chat data not available", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // Метод для открытия ProfileChatActivity (оставлен для совместимости)
+    private void openProfileChatActivity() {
+        openProfileSettings();
+    }
+
+    // ИСПРАВЛЕННЫЙ МЕТОД: Загрузка кастомных настроек из правильного пути
+    private void loadCustomSettings() {
+        if (otherUserId == null || currentUserId == null) return;
+
+        // Удаляем предыдущий слушатель если есть
+        if (customSettingsListener != null) {
+            FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                    .child(currentUserId)
+                    .child("chatContacts")
+                    .child(otherUserId)
+                    .removeEventListener(customSettingsListener);
+        }
+
+        customSettingsListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                String displayName = originalUsername;
+                String displayImage = originalProfileImage;
+
+                if (snapshot.exists()) {
+                    String customName = snapshot.child("customName").getValue(String.class);
+                    String customImage = snapshot.child("customImage").getValue(String.class);
+
+                    // Используем кастомное имя если есть
+                    if (customName != null && !customName.isEmpty()) {
+                        displayName = customName;
+                    }
+
+                    // Используем кастомное фото если есть
+                    if (customImage != null && !customImage.isEmpty()) {
+                        displayImage = customImage;
+                    }
+                }
+
+                // Применяем настройки в UI
+                updateUserDisplay(displayName, displayImage);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e("ChatActivity", "Failed to load custom settings", error.toException());
+                // В случае ошибки используем оригинальные данные
+                updateUserDisplay(originalUsername, originalProfileImage);
+            }
+        };
+
+        FirebaseDatabase.getInstance().getReference("UserCustomizations")
+                .child(currentUserId)
+                .child("chatContacts")
+                .child(otherUserId)
+                .addValueEventListener(customSettingsListener);
+    }
+
+    // Метод для обновления отображения пользователя
+    private void updateUserDisplay(String displayName, String displayImage) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                // Устанавливаем имя
+                if (displayName != null && !displayName.isEmpty()) {
+                    binding.chatUserName.setText(displayName);
+                } else {
+                    binding.chatUserName.setText(originalUsername);
+                }
+
+                // Устанавливаем аватарку
+                if (displayImage != null && !displayImage.isEmpty()) {
+                    Glide.with(ChatActivity.this)
+                            .load(displayImage)
+                            .placeholder(R.drawable.artem)
+                            .error(R.drawable.artem)
+                            .into(binding.chatUserAvatar);
+                } else if (originalProfileImage != null && !originalProfileImage.isEmpty()) {
+                    Glide.with(ChatActivity.this)
+                            .load(originalProfileImage)
+                            .placeholder(R.drawable.artem)
+                            .error(R.drawable.artem)
+                            .into(binding.chatUserAvatar);
+                } else {
+                    binding.chatUserAvatar.setImageResource(R.drawable.artem);
+                }
+            }
+        });
     }
 
     // МЕТОД: Настройка обработчика кликов для сообщений
@@ -753,96 +859,10 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    private void openProfileSettings() {
-        if (otherUserId != null && chatId != null) {
-            Intent intent = new Intent(ChatActivity.this, ProfileChatActivity.class);
-            intent.putExtra("otherUserId", otherUserId);
-            intent.putExtra("chatId", chatId);
-            startActivity(intent);
-        } else {
-            Toast.makeText(this, "Chat data not available", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private void loadCustomSettings() {
-        if (otherUserId == null || currentUserId == null) return;
-
-        if (customSettingsListener != null) {
-            FirebaseDatabase.getInstance().getReference("UserCustomizations")
-                    .child(currentUserId)
-                    .child("chatContacts")
-                    .child(otherUserId)
-                    .removeEventListener(customSettingsListener);
-        }
-
-        customSettingsListener = new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                String displayName = originalUsername;
-                String displayImage = originalProfileImage;
-
-                if (snapshot.exists()) {
-                    String customName = snapshot.child("customName").getValue(String.class);
-                    String customImage = snapshot.child("customImage").getValue(String.class);
-
-                    if (customName != null && !customName.isEmpty()) {
-                        displayName = customName;
-                    }
-
-                    if (customImage != null && !customImage.isEmpty()) {
-                        displayImage = customImage;
-                    }
-                }
-
-                updateUserDisplay(displayName, displayImage);
-            }
-
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {
-                Log.e("ChatActivity", "Failed to load custom settings", error.toException());
-                updateUserDisplay(originalUsername, originalProfileImage);
-            }
-        };
-
-        FirebaseDatabase.getInstance().getReference("UserCustomizations")
-                .child(currentUserId)
-                .child("chatContacts")
-                .child(otherUserId)
-                .addValueEventListener(customSettingsListener);
-    }
-
-    private void updateUserDisplay(String displayName, String displayImage) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                if (displayName != null && !displayName.isEmpty()) {
-                    binding.chatUserName.setText(displayName);
-                } else {
-                    binding.chatUserName.setText(originalUsername);
-                }
-
-                if (displayImage != null && !displayImage.isEmpty()) {
-                    Glide.with(ChatActivity.this)
-                            .load(displayImage)
-                            .placeholder(R.drawable.artem)
-                            .error(R.drawable.artem)
-                            .into(binding.chatUserAvatar);
-                } else if (originalProfileImage != null && !originalProfileImage.isEmpty()) {
-                    Glide.with(ChatActivity.this)
-                            .load(originalProfileImage)
-                            .placeholder(R.drawable.artem)
-                            .error(R.drawable.artem)
-                            .into(binding.chatUserAvatar);
-                } else {
-                    binding.chatUserAvatar.setImageResource(R.drawable.artem);
-                }
-            }
-        });
-    }
-
     private void startUserStatusTracking() {
         if (otherUserId == null) return;
 
+        // Удаляем предыдущий слушатель, если он есть
         if (userStatusListener != null) {
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(otherUserId)
@@ -872,6 +892,7 @@ public class ChatActivity extends AppCompatActivity {
                 .child(otherUserId)
                 .addValueEventListener(userStatusListener);
 
+        // Запускаем периодическое обновление статуса
         startPeriodicStatusUpdate();
     }
 
@@ -880,6 +901,7 @@ public class ChatActivity extends AppCompatActivity {
         statusUpdateRunnable = new Runnable() {
             @Override
             public void run() {
+                // Принудительно обновляем статус каждую минуту для актуальности
                 if (otherUserId != null) {
                     FirebaseDatabase.getInstance().getReference("Users")
                             .child(otherUserId)
@@ -902,7 +924,7 @@ public class ChatActivity extends AppCompatActivity {
                                 }
                             });
                 }
-                statusUpdateHandler.postDelayed(this, 60000);
+                statusUpdateHandler.postDelayed(this, 60000); // Обновляем каждую минуту
             }
         };
         statusUpdateHandler.post(statusUpdateRunnable);
@@ -934,6 +956,7 @@ public class ChatActivity extends AppCompatActivity {
         long minutes = diff / (60 * 1000);
         long hours = diff / (60 * 60 * 1000);
 
+        // Получаем текущую дату и дату последней активности
         java.util.Calendar currentCal = java.util.Calendar.getInstance();
         java.util.Calendar lastOnlineCal = java.util.Calendar.getInstance();
         lastOnlineCal.setTimeInMillis(lastOnlineTimestamp);
@@ -943,9 +966,11 @@ public class ChatActivity extends AppCompatActivity {
         int lastOnlineDay = lastOnlineCal.get(java.util.Calendar.DAY_OF_YEAR);
         int lastOnlineYear = lastOnlineCal.get(java.util.Calendar.YEAR);
 
+        // Проверяем, был ли пользователь онлайн вчера
         boolean isYesterday = (currentDay - lastOnlineDay == 1 && currentYear == lastOnlineYear) ||
                 (currentDay == 1 && lastOnlineDay >= 365 && currentYear - lastOnlineYear == 1);
 
+        // Проверяем, был ли пользователь онлайн позавчера или раньше
         boolean isMoreThanTwoDays = (currentDay - lastOnlineDay > 1 && currentYear == lastOnlineYear) ||
                 (currentYear - lastOnlineYear > 0);
 
@@ -958,6 +983,7 @@ public class ChatActivity extends AppCompatActivity {
         } else if (isYesterday) {
             return "was online yesterday at " + (lastOnlineTime != null ? lastOnlineTime : "unknown time");
         } else if (isMoreThanTwoDays) {
+            // Для активности старше 2 дней показываем полную дату и время
             SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy 'at' HH:mm", Locale.getDefault());
             return "was online " + dateFormat.format(new Date(lastOnlineTimestamp));
         } else {
@@ -965,6 +991,7 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
+    // ВАЖНО: Метод для отметки всех сообщений как прочитанных
     private void markAllMessagesAsRead() {
         if (chatId == null || otherUserId == null) {
             Log.e("ChatActivity", "chatId or otherUserId is null");
@@ -990,6 +1017,7 @@ public class ChatActivity extends AppCompatActivity {
                             String ownerId = messageSnapshot.child("ownerId").getValue(String.class);
                             Boolean isRead = messageSnapshot.child("isRead").getValue(Boolean.class);
 
+                            // Отмечаем как прочитанные сообщения от другого пользователя, которые еще не прочитаны
                             if (messageId != null && ownerId != null &&
                                     ownerId.equals(currentOtherUserId) &&
                                     (isRead == null || !isRead)) {
@@ -1079,15 +1107,11 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
+    // ВАЖНО: Исправленный метод отправки сообщения
     private void sendMessage() {
         String messageText = binding.messageEt.getText().toString().trim();
         if (messageText.isEmpty()) {
             Toast.makeText(this, "Message cannot be empty", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        if (chatId == null) {
-            Toast.makeText(this, "Chat not initialized", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -1110,13 +1134,15 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
+        // ВАЖНО: При отправке сообщения устанавливаем isRead = true только для отправителя
+        // Для получателя сообщение будет непрочитанным (isRead = false)
         HashMap<String, Object> messageInfo = new HashMap<>();
         messageInfo.put("id", messageKey);
         messageInfo.put("text", messageText);
         messageInfo.put("ownerId", currentUserId);
         messageInfo.put("date", date);
         messageInfo.put("timestamp", System.currentTimeMillis());
-        messageInfo.put("isRead", false);
+        messageInfo.put("isRead", false); // ВАЖНО: по умолчанию сообщение непрочитанное
         messageInfo.put("messageType", "text");
 
         FirebaseDatabase.getInstance()
@@ -1172,6 +1198,7 @@ public class ChatActivity extends AppCompatActivity {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         if (snapshot.exists()) {
+                            // Сохраняем оригинальные данные
                             originalUsername = snapshot.child("login").getValue(String.class);
                             if (originalUsername == null) {
                                 String email = snapshot.child("email").getValue(String.class);
@@ -1187,6 +1214,7 @@ public class ChatActivity extends AppCompatActivity {
                                 originalProfileImage = "";
                             }
 
+                            // Сначала устанавливаем оригинальные данные
                             binding.chatUserName.setText(originalUsername);
 
                             if (originalProfileImage != null && !originalProfileImage.isEmpty()) {
@@ -1199,8 +1227,10 @@ public class ChatActivity extends AppCompatActivity {
                                 binding.chatUserAvatar.setImageResource(R.drawable.artem);
                             }
 
+                            // Теперь загружаем кастомные настройки (они перезапишут оригинальные если есть)
                             loadCustomSettings();
 
+                            // Загружаем начальный статус
                             Boolean isOnline = snapshot.child("isOnline").getValue(Boolean.class);
                             Long lastOnline = snapshot.child("lastOnline").getValue(Long.class);
                             String lastOnlineTime = snapshot.child("lastOnlineTime").getValue(String.class);
@@ -1233,6 +1263,7 @@ public class ChatActivity extends AppCompatActivity {
                                 String newOtherUserId = userId1.equals(currentCurrentUserId) ? userId2 : userId1;
                                 otherUserId = newOtherUserId;
 
+                                // Обновляем данные в адаптере
                                 if (messageAdapter != null) {
                                     messageAdapter.updateChatData(chatId, otherUserId);
                                 }
@@ -1296,6 +1327,7 @@ public class ChatActivity extends AppCompatActivity {
                             }
                             messages.add(message);
 
+                            // Автоматически помечаем входящие сообщения как прочитанные при загрузке
                             if (ownerId.equals(currentOtherUserId) && (isRead == null || !isRead)) {
                                 markSingleMessageAsRead(messageId);
                             }
@@ -1358,8 +1390,10 @@ public class ChatActivity extends AppCompatActivity {
         super.onResume();
         if (chatId != null && otherUserId != null) {
             markAllMessagesAsRead();
+            // При возвращении в чат обновляем кастомные настройки
             loadCustomSettings();
         }
+        // Обновляем онлайн статус при возвращении в приложение
         updateUserOnlineStatus();
     }
 
@@ -1399,6 +1433,7 @@ public class ChatActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
 
+        // Очищаем onDisconnect при выходе
         if (currentUserId != null) {
             FirebaseDatabase.getInstance().getReference("Users")
                     .child(currentUserId)
@@ -1407,6 +1442,7 @@ public class ChatActivity extends AppCompatActivity {
                     .cancel();
         }
 
+        // Очищаем слушатели
         if (messagesListener != null && chatId != null) {
             FirebaseDatabase.getInstance()
                     .getReference("Chats")

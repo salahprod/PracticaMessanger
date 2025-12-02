@@ -4,13 +4,13 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.ImageView;
-import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -24,25 +24,30 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 import com.google.firebase.storage.FirebaseStorage;
 import com.google.firebase.storage.StorageReference;
+import com.google.firebase.storage.UploadTask;
 
 import java.util.HashMap;
 import java.util.UUID;
 
+import de.hdodenhof.circleimageview.CircleImageView;
+
 public class ProfileChatActivity extends AppCompatActivity {
 
-    private ImageView profileImage;
+    private CircleImageView profileImage;
     private EditText userNameEditText;
-    private TextView emailTextView; // Новое поле для email
     private ImageButton exitBtn;
     private String otherUserId;
+    private String chatId;
     private String currentUserId;
     private DatabaseReference userCustomizationsRef;
     private StorageReference storageReference;
     private static final int PICK_IMAGE_REQUEST = 1;
     private String originalUsername = "";
     private String originalProfileImage = "";
-    private String originalEmail = ""; // Добавляем поле для email
     private boolean isDataLoaded = false;
+    private boolean isImageChanged = false;
+    private Uri selectedImageUri;
+    private boolean isSaving = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,6 +58,7 @@ public class ProfileChatActivity extends AppCompatActivity {
         Intent intent = getIntent();
         if (intent != null) {
             otherUserId = intent.getStringExtra("otherUserId");
+            chatId = intent.getStringExtra("chatId");
         }
 
         if (otherUserId == null) {
@@ -63,7 +69,13 @@ public class ProfileChatActivity extends AppCompatActivity {
 
         currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
-        // ИСПРАВЛЕННЫЙ ПУТЬ: Используем правильный путь для кастомных настроек
+        if (currentUserId == null) {
+            Toast.makeText(this, "Error: User not authenticated", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
+
+        // Используем правильный путь для кастомных настроек
         userCustomizationsRef = FirebaseDatabase.getInstance().getReference("UserCustomizations")
                 .child(currentUserId)
                 .child("chatContacts")
@@ -73,12 +85,14 @@ public class ProfileChatActivity extends AppCompatActivity {
 
         initializeViews();
         loadUserData();
+
+        // Настраиваем обработчик системной кнопки назад с использованием OnBackPressedDispatcher
+        setupOnBackPressedCallback();
     }
 
     private void initializeViews() {
         profileImage = findViewById(R.id.profileImage);
         userNameEditText = findViewById(R.id.userNameEditText);
-        emailTextView = findViewById(R.id.rd6cte99r4eh); // Находим TextView для email по id
         exitBtn = findViewById(R.id.exit_btn);
 
         // Клик на аватарку для выбора фото
@@ -89,22 +103,21 @@ public class ProfileChatActivity extends AppCompatActivity {
             }
         });
 
-        // Сохраняем изменения при редактировании имени
-        userNameEditText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-            @Override
-            public void onFocusChange(View v, boolean hasFocus) {
-                if (!hasFocus && isDataLoaded) {
-                    saveCustomizations();
-                }
-            }
-        });
-
-        // Кнопка выхода
+        // Кнопка выхода - сохраняет изменения и возвращает в чат
         exitBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                saveCustomizations();
-                finish();
+                saveAllChangesAndExit();
+            }
+        });
+    }
+
+    private void setupOnBackPressedCallback() {
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                // При нажатии системной кнопки назад также сохраняем изменения
+                saveAllChangesAndExit();
             }
         });
     }
@@ -121,47 +134,16 @@ public class ProfileChatActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
 
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null && data.getData() != null) {
-            Uri imageUri = data.getData();
+            selectedImageUri = data.getData();
+            isImageChanged = true;
 
             // Показываем выбранное изображение сразу
             Glide.with(this)
-                    .load(imageUri)
-                    .circleCrop()
+                    .load(selectedImageUri)
+                    .placeholder(R.drawable.artem)
+                    .error(R.drawable.artem)
                     .into(profileImage);
-
-            // Загружаем изображение в Firebase Storage
-            uploadImageToFirebase(imageUri);
         }
-    }
-
-    private void uploadImageToFirebase(Uri imageUri) {
-        String filename = UUID.randomUUID().toString();
-        StorageReference fileRef = storageReference.child("custom_avatars/" + currentUserId + "/" + otherUserId + "/" + filename);
-
-        fileRef.putFile(imageUri)
-                .addOnSuccessListener(taskSnapshot -> {
-                    fileRef.getDownloadUrl().addOnSuccessListener(uri -> {
-                        String imageUrl = uri.toString();
-                        saveCustomImage(imageUrl);
-                    });
-                })
-                .addOnFailureListener(e -> {
-                    Toast.makeText(ProfileChatActivity.this, "Failed to upload image", Toast.LENGTH_SHORT).show();
-                });
-    }
-
-    private void saveCustomImage(String imageUrl) {
-        HashMap<String, Object> updates = new HashMap<>();
-        updates.put("customImage", imageUrl);
-
-        userCustomizationsRef.updateChildren(updates)
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        Toast.makeText(ProfileChatActivity.this, "Avatar updated", Toast.LENGTH_SHORT).show();
-                    } else {
-                        Toast.makeText(ProfileChatActivity.this, "Failed to save avatar", Toast.LENGTH_SHORT).show();
-                    }
-                });
     }
 
     private void loadUserData() {
@@ -175,7 +157,6 @@ public class ProfileChatActivity extends AppCompatActivity {
                             // Получаем оригинальное имя пользователя
                             originalUsername = snapshot.child("login").getValue(String.class);
                             originalProfileImage = snapshot.child("profileImage").getValue(String.class);
-                            originalEmail = snapshot.child("email").getValue(String.class); // Получаем email
 
                             // Если login не найден, пробуем username
                             if (originalUsername == null) {
@@ -183,29 +164,27 @@ public class ProfileChatActivity extends AppCompatActivity {
                             }
 
                             // Если все еще нет имени, используем часть email
-                            if (originalUsername == null && originalEmail != null && originalEmail.contains("@")) {
-                                originalUsername = originalEmail.substring(0, originalEmail.indexOf("@"));
-                            } else if (originalUsername == null) {
-                                originalUsername = "User";
-                            }
-
-                            // Устанавливаем email в TextView
-                            if (originalEmail != null && !originalEmail.isEmpty()) {
-                                emailTextView.setText(originalEmail);
-                            } else {
-                                emailTextView.setText("No email available");
+                            if (originalUsername == null) {
+                                String email = snapshot.child("email").getValue(String.class);
+                                if (email != null && email.contains("@")) {
+                                    originalUsername = email.substring(0, email.indexOf("@"));
+                                } else {
+                                    originalUsername = "User";
+                                }
                             }
 
                             // Загружаем кастомные настройки
                             loadCustomizations();
                         } else {
                             Toast.makeText(ProfileChatActivity.this, "User not found", Toast.LENGTH_SHORT).show();
+                            finish();
                         }
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
                         Toast.makeText(ProfileChatActivity.this, "Failed to load user data", Toast.LENGTH_SHORT).show();
+                        finish();
                     }
                 });
     }
@@ -236,20 +215,13 @@ public class ProfileChatActivity extends AppCompatActivity {
                 // Устанавливаем данные в UI
                 userNameEditText.setText(displayName);
 
-                // Устанавливаем email (email всегда оригинальный, не меняется кастомно)
-                if (originalEmail != null && !originalEmail.isEmpty()) {
-                    emailTextView.setText(originalEmail);
-                }
-
                 // Устанавливаем аватар
                 if (displayImage != null && !displayImage.isEmpty()) {
                     Glide.with(ProfileChatActivity.this)
                             .load(displayImage)
-                            .circleCrop()
                             .placeholder(R.drawable.artem)
+                            .error(R.drawable.artem)
                             .into(profileImage);
-                } else {
-                    profileImage.setImageResource(R.drawable.artem);
                 }
 
                 isDataLoaded = true;
@@ -259,38 +231,127 @@ public class ProfileChatActivity extends AppCompatActivity {
             public void onCancelled(@NonNull DatabaseError error) {
                 Toast.makeText(ProfileChatActivity.this, "Failed to load customizations", Toast.LENGTH_SHORT).show();
                 isDataLoaded = true;
+
+                // Устанавливаем оригинальные данные в случае ошибки
+                userNameEditText.setText(originalUsername);
+
+                if (originalProfileImage != null && !originalProfileImage.isEmpty()) {
+                    Glide.with(ProfileChatActivity.this)
+                            .load(originalProfileImage)
+                            .placeholder(R.drawable.artem)
+                            .error(R.drawable.artem)
+                            .into(profileImage);
+                }
             }
         });
     }
 
-    private void saveCustomizations() {
-        if (!isDataLoaded) return;
+    private void saveAllChangesAndExit() {
+        if (isSaving) {
+            // Уже сохраняем, предотвращаем двойное сохранение
+            return;
+        }
 
+        if (!isDataLoaded) {
+            // Если данные еще не загружены, просто выходим
+            finish();
+            return;
+        }
+
+        isSaving = true;
+
+        // Сохраняем изменения имени
+        saveCustomName();
+
+        // Если было изменено изображение, загружаем его
+        if (isImageChanged && selectedImageUri != null) {
+            uploadImageToFirebase(selectedImageUri);
+        } else {
+            // Если изображение не менялось, просто выходим
+            Toast.makeText(this, "Changes saved", Toast.LENGTH_SHORT).show();
+            finish();
+        }
+    }
+
+    private void saveCustomName() {
         String customName = userNameEditText.getText().toString().trim();
 
-        // Если имя пустое или равно оригинальному, удаляем кастомное имя
-        if (TextUtils.isEmpty(customName) || customName.equals(originalUsername)) {
-            // Удаляем кастомное имя, но сохраняем структуру
+        // Если имя пустое, устанавливаем оригинальное имя
+        if (TextUtils.isEmpty(customName)) {
+            customName = originalUsername;
+            userNameEditText.setText(customName);
+        }
+
+        // Если имя равно оригинальному, удаляем кастомное имя
+        if (customName.equals(originalUsername)) {
+            // Удаляем только кастомное имя
             userCustomizationsRef.child("customName").removeValue();
         } else {
             // Сохраняем кастомное имя
             HashMap<String, Object> updates = new HashMap<>();
             updates.put("customName", customName);
 
-            // Убедимся, что документ существует
-            userCustomizationsRef.updateChildren(updates);
+            userCustomizationsRef.updateChildren(updates)
+                    .addOnCompleteListener(task -> {
+                        // Логируем, но не показываем Toast здесь, чтобы не дублировать
+                        if (!task.isSuccessful()) {
+                            Log.e("ProfileChat", "Failed to save custom name", task.getException());
+                        }
+                    });
         }
     }
 
-    @Override
-    protected void onPause() {
-        super.onPause();
-        saveCustomizations();
+    private void uploadImageToFirebase(Uri imageUri) {
+        // Показываем уведомление о загрузке
+        Toast.makeText(this, "Saving image...", Toast.LENGTH_SHORT).show();
+
+        String filename = "custom_avatar_" + UUID.randomUUID().toString() + ".jpg";
+        StorageReference fileRef = storageReference.child("custom_avatars/" + currentUserId + "/" + otherUserId + "/" + filename);
+
+        UploadTask uploadTask = fileRef.putFile(imageUri);
+
+        uploadTask.addOnSuccessListener(taskSnapshot -> {
+            fileRef.getDownloadUrl().addOnSuccessListener(uri -> {
+                String imageUrl = uri.toString();
+                saveCustomImage(imageUrl);
+            }).addOnFailureListener(e -> {
+                Toast.makeText(ProfileChatActivity.this, "Failed to get image URL", Toast.LENGTH_SHORT).show();
+                isSaving = false;
+                finish();
+            });
+        }).addOnFailureListener(e -> {
+            Toast.makeText(ProfileChatActivity.this, "Failed to upload image", Toast.LENGTH_SHORT).show();
+            isSaving = false;
+            finish();
+        });
     }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        saveCustomizations();
+    private void saveCustomImage(String imageUrl) {
+        HashMap<String, Object> updates = new HashMap<>();
+        updates.put("customImage", imageUrl);
+
+        // Добавляем имя, если оно было изменено
+        String customName = userNameEditText.getText().toString().trim();
+        if (!TextUtils.isEmpty(customName) && !customName.equals(originalUsername)) {
+            updates.put("customName", customName);
+        }
+
+        userCustomizationsRef.updateChildren(updates)
+                .addOnCompleteListener(task -> {
+                    isSaving = false;
+                    if (task.isSuccessful()) {
+                        Toast.makeText(ProfileChatActivity.this, "Changes saved", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(ProfileChatActivity.this, "Failed to save changes", Toast.LENGTH_SHORT).show();
+                    }
+                    finish();
+                })
+                .addOnFailureListener(e -> {
+                    isSaving = false;
+                    Toast.makeText(ProfileChatActivity.this, "Failed to save changes", Toast.LENGTH_SHORT).show();
+                    finish();
+                });
     }
+
+    // Не переопределяем onBackPressed, используем OnBackPressedDispatcher
 }
