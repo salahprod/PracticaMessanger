@@ -27,6 +27,7 @@ import androidx.fragment.app.Fragment;
 import com.bumptech.glide.Glide;
 import com.example.androidmessage1.LoginActivity;
 import com.example.androidmessage1.R;
+import com.example.androidmessage1.SettingsMainActivity;
 import com.example.androidmessage1.databinding.FragmentProfileBinding;
 import com.google.android.gms.tasks.Continuation;
 import com.google.android.gms.tasks.OnCompleteListener;
@@ -125,6 +126,14 @@ public class ProfileFragment extends Fragment {
             @Override
             public void onClick(View v) {
                 showEditNameDialog();
+            }
+        });
+
+        // Обработка нажатия на кнопку настроек (rw0kdc4ygjor)
+        binding.settingsBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openSettingsActivity();
             }
         });
 
@@ -254,6 +263,15 @@ public class ProfileFragment extends Fragment {
                         Log.e(TAG, "Failed to update name: " + e.getMessage());
                     }
                 });
+    }
+
+    // Метод для открытия SettingsMainActivity
+    private void openSettingsActivity() {
+        Intent intent = new Intent(getContext(), SettingsMainActivity.class);
+        startActivity(intent);
+
+        // Добавляем анимацию перехода (опционально)
+
     }
 
     // ВАЖНО: Исправленный метод выхода

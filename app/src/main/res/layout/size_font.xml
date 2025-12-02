@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/lr270d4c5fc9dc6fc"
+    android:id="@+id/main_layout">
+
+    <!-- Back arrow at left position -->
+    <ImageView
+        android:id="@+id/back_arrow"
+        android:layout_width="25dp"
+        android:layout_height="25dp"
+        android:layout_marginTop="172dp"
+        android:layout_marginLeft="27dp"
+        android:src="@drawable/exit_left"
+        android:contentDescription="Back arrow"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- SIZE FONT text at exact position from SVG -->
+    <TextView
+        android:id="@+id/title_size_font"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="81dp"
+        android:layout_marginTop="148dp"
+        android:fontFamily="@font/montserrat_bold"
+        android:text="SIZE FONT"
+        android:textColor="#000000"
+        android:textSize="48sp"
+        android:textStyle="bold" />
+
+    <!-- TextView for top scale value (10 sp) -->
+    <TextView
+        android:id="@+id/top_scale_value"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="230dp"
+        android:layout_marginTop="315dp"
+        android:fontFamily="@font/montserrat_medium"
+        android:text="10 sp"
+        android:textColor="#000000"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <!-- TextView for bottom scale value (22 sp) -->
+    <TextView
+        android:id="@+id/bottom_scale_value"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="230dp"
+        android:layout_marginTop="510dp"
+        android:fontFamily="@font/montserrat_medium"
+        android:text="22 sp"
+        android:textColor="#000000"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <!-- Vertical scale line (кликабельная область для перемещения ползунка) -->
+    <View
+        android:id="@+id/vertical_line"
+        android:layout_width="30dp"
+        android:layout_height="288dp"
+        android:layout_marginTop="327.5dp"
+        android:layout_marginLeft="185.5dp"
+        android:background="@android:color/transparent"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- Фоновая линия шкалы -->
+    <View
+        android:layout_width="2dp"
+        android:layout_height="195dp"
+        android:layout_marginTop="327.5dp"
+        android:layout_marginLeft="197.5dp"
+        android:background="#000000" />
+
+    <!-- Scale marks -->
+    <!-- Mark at 327 -->
+    <View
+        android:layout_width="10dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="327.5dp"
+        android:layout_marginLeft="193dp"
+        android:background="#000000" />
+    <View
+        android:layout_width="10dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="327.5dp"
+        android:layout_marginLeft="198.5dp"
+        android:background="#000000" />
+
+    <!-- Mark at 375 -->
+    <View
+        android:layout_width="10dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="375.5dp"
+        android:layout_marginLeft="193dp"
+        android:background="#000000" />
+    <View
+        android:layout_width="10dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="375.5dp"
+        android:layout_marginLeft="198.5dp"
+        android:background="#000000" />
+
+    <!-- Mark at 422 -->
+    <View
+        android:layout_width="10dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="422.5dp"
+        android:layout_marginLeft="193dp"
+        android:background="#000000" />
+    <View
+        android:layout_width="10dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="422.5dp"
+        android:layout_marginLeft="198.5dp"
+        android:background="#000000" />
+
+    <!-- Mark at 469 -->
+    <View
+        android:layout_width="10dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="469.5dp"
+        android:layout_marginLeft="193dp"
+        android:background="#000000" />
+    <View
+        android:layout_width="10dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="469.5dp"
+        android:layout_marginLeft="198.5dp"
+        android:background="#000000" />
+
+    <!-- Mark at 521 -->
+    <View
+        android:layout_width="10dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="521.5dp"
+        android:layout_marginLeft="194dp"
+        android:background="#000000" />
+    <View
+        android:layout_width="10dp"
+        android:layout_height="2dp"
+        android:layout_marginTop="521.5dp"
+        android:layout_marginLeft="198.5dp"
+        android:background="#000000" />
+
+
+
+    <!-- Slider circle at position 375 -->
+    <ImageView
+        android:id="@+id/slider_circle"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_marginTop="368.5dp"
+        android:layout_marginLeft="191dp"
+        android:src="@drawable/circle_slider"
+        android:contentDescription="Font size slider"
+        android:clickable="true"
+        android:focusable="true" />
+
+</FrameLayout>

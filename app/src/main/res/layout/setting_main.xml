@@ -83,13 +83,13 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:fontFamily="@font/montserrat_bold"
-                        android:text="Change Topics"
+                        android:text="Change Size Font"
                         android:textColor="#000000"
                         android:textSize="20sp"
                         android:textStyle="bold" />
 
                     <ImageView
-                        android:id="@+id/change_topics_arrow"
+                        android:id="@+id/change_size_arrow"
                         android:layout_width="16dp"
                         android:layout_height="16dp"
                         android:src="@drawable/setting_btn"
@@ -98,49 +98,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Divider Line -->
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:background="#E0E0E0"
-                android:layout_marginVertical="5dp" />
 
-            <!-- Change Language Option -->
-            <LinearLayout
-                android:id="@+id/change_language_layout"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingVertical="20dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <TextView
-                        android:id="@+id/change_language_text"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:fontFamily="@font/montserrat_bold"
-                        android:text="Change Language"
-                        android:textColor="#000000"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                    <ImageView
-                        android:id="@+id/change_language_arrow"
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:src="@drawable/setting_btn"
-                        android:scaleType="fitCenter"
-                       />
-                </LinearLayout>
-            </LinearLayout>
-
-            <!-- Divider Line -->
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"

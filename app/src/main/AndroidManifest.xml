@@ -6,8 +6,6 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-
-
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -17,6 +15,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AndroidMessage1">
+
         <activity
             android:name=".ChatActivity"
             android:screenOrientation="portrait"
@@ -34,7 +33,6 @@
         <activity android:name=".ProfileChatActivity"
             android:screenOrientation="portrait"/>
 
-
         <activity
             android:name=".groups.GroupChatActivity"
             android:exported="false"
@@ -47,6 +45,17 @@
             android:screenOrientation="portrait"
             android:parentActivityName=".groups.GroupChatActivity" />
 
+        <!-- Добавьте эту строку для SizeFontActivity -->
+        <activity
+            android:name=".message.SizeFontActivity"
+            android:screenOrientation="portrait"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+
+        <activity
+            android:name=".SettingsMainActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
         <activity
             android:name=".groups.AddMembersActivity"
             android:screenOrientation="portrait"
@@ -56,17 +65,18 @@
         <activity
             android:name=".RegisterActivity"
             android:screenOrientation="portrait"
-            android:exported="false" /> <!-- Сделайте LoginActivity запускаемой -->
+            android:exported="false" />
+
         <activity
             android:name=".LoginActivity"
             android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
         <activity
             android:name=".MainActivity"
             android:screenOrientation="portrait"

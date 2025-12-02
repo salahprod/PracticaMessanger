@@ -1,5 +1,6 @@
 package com.example.androidmessage1.groups;
 
+import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -10,6 +11,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.Glide;
 import com.example.androidmessage1.R;
 import com.example.androidmessage1.databinding.PersonItemRvBinding;
+import com.example.androidmessage1.message.FontSizeManager;
 
 import java.util.ArrayList;
 
@@ -17,14 +19,18 @@ public class GroupsAdapter extends RecyclerView.Adapter<GroupsAdapter.GroupViewH
 
     private ArrayList<Group> groups;
     private OnGroupClickListener listener;
+    private Context context;
+    private float currentFontSize;
 
     public interface OnGroupClickListener {
         void onGroupClick(int position);
     }
 
-    public GroupsAdapter(ArrayList<Group> groups, OnGroupClickListener listener) {
+    public GroupsAdapter(ArrayList<Group> groups, OnGroupClickListener listener, Context context) {
         this.groups = groups;
         this.listener = listener;
+        this.context = context;
+        this.currentFontSize = FontSizeManager.getFontSize(context);
     }
 
     @NonNull
@@ -40,6 +46,9 @@ public class GroupsAdapter extends RecyclerView.Adapter<GroupsAdapter.GroupViewH
         Group group = groups.get(position);
 
         holder.binding.usernameTv.setText(group.getGroupName());
+
+        // Применяем размер шрифта к тексту сообщения
+        holder.binding.lastMessageTv.setTextSize(currentFontSize);
 
         // Set last message with file type support
         String lastMessage = group.getLastMessage();
@@ -228,6 +237,12 @@ public class GroupsAdapter extends RecyclerView.Adapter<GroupsAdapter.GroupViewH
         int size = groups.size();
         groups.clear();
         notifyItemRangeRemoved(0, size);
+    }
+
+    // Метод для обновления размера шрифта
+    public void updateFontSize() {
+        this.currentFontSize = FontSizeManager.getFontSize(context);
+        notifyDataSetChanged(); // Обновляем все сообщения с новым размером шрифта
     }
 
     public static class GroupViewHolder extends RecyclerView.ViewHolder {

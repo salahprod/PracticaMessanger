@@ -1,5 +1,6 @@
 package com.example.androidmessage1.message;
 
+import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -9,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.androidmessage1.R;
+import com.example.androidmessage1.message.FontSizeManager;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
@@ -22,11 +24,15 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     private List<Message> messages;
     private String chatId;
     private String otherUserId;
+    private Context context;
+    private float currentFontSize;
 
-    public MessageAdapter(List<Message> messages, String chatId, String otherUserId){
+    public MessageAdapter(List<Message> messages, String chatId, String otherUserId, Context context){
         this.messages = messages;
         this.chatId = chatId;
         this.otherUserId = otherUserId;
+        this.context = context;
+        this.currentFontSize = FontSizeManager.getFontSize(context);
     }
 
     @NonNull
@@ -42,6 +48,8 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         holder.messageTv.setText(message.getText());
         holder.dateTv.setText(message.getDate());
 
+        // Применяем размер шрифта к тексту сообщения
+        holder.messageTv.setTextSize(currentFontSize);
 
         // Загружаем кастомные настройки для отображения
         loadCustomSettings(holder, message);
@@ -137,6 +145,12 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     public void updateChatData(String chatId, String otherUserId) {
         this.chatId = chatId;
         this.otherUserId = otherUserId;
+    }
+
+    // Метод для обновления размера шрифта
+    public void updateFontSize() {
+        this.currentFontSize = FontSizeManager.getFontSize(context);
+        notifyDataSetChanged(); // Обновляем все сообщения с новым размером шрифта
     }
 
     static class MessageViewHolder extends RecyclerView.ViewHolder{

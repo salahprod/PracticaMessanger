@@ -1,5 +1,6 @@
 package com.example.androidmessage1.groups;
 
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -20,6 +21,7 @@ import com.example.androidmessage1.R;
 import com.example.androidmessage1.databinding.ActivityGroupChatBinding;
 import com.example.androidmessage1.groups.messages.GroupMessage;
 import com.example.androidmessage1.groups.messages.GroupMessageAdapter;
+import com.example.androidmessage1.message.FontSizeManager;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
@@ -110,6 +112,25 @@ public class GroupChatActivity extends AppCompatActivity {
 
         // Настройка превью выбранных файлов
         setupSelectedFilesPreview();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        Log.d("GroupChatActivity", "=== ON RESUME ===");
+        setupCurrentUserOnlineStatus();
+        if (groupId != null) {
+            markAllMessagesAsRead();
+        }
+        // ОБНОВЛЯЕМ РАЗМЕР ШРИФТА ПРИ ВОЗВРАЩЕНИИ НА ЭКРАН
+        updateFontSize();
+    }
+
+    // МЕТОД ДЛЯ ОБНОВЛЕНИЯ РАЗМЕРА ШРИФТА
+    private void updateFontSize() {
+        if (messageAdapter != null) {
+            messageAdapter.updateFontSize();
+        }
     }
 
     // МЕТОД: Настройка превью выбранных файлов
@@ -497,8 +518,8 @@ public class GroupChatActivity extends AppCompatActivity {
 
         binding.messagesRv.setLayoutManager(new LinearLayoutManager(this));
 
-        // Создаем адаптер с поддержкой кликов для файлов
-        messageAdapter = new GroupMessageAdapter(messages, groupId);
+        // Создаем адаптер с поддержкой РАЗМЕРА ШРИФТА (используем новый конструктор с Context)
+        messageAdapter = new GroupMessageAdapter(messages, groupId, this);
         binding.messagesRv.setAdapter(messageAdapter);
 
         // Настраиваем обработчик кликов для сообщений
@@ -1160,16 +1181,6 @@ public class GroupChatActivity extends AppCompatActivity {
 
     private void markSingleMessageAsRead(String messageId) {
         groupRef.child("messages").child(messageId).child("isRead").setValue(true);
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        Log.d("GroupChatActivity", "=== ON RESUME ===");
-        setupCurrentUserOnlineStatus();
-        if (groupId != null) {
-            markAllMessagesAsRead();
-        }
     }
 
     @Override

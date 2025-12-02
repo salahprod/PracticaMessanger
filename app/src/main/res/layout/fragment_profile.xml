@@ -176,11 +176,13 @@
                     android:layout_weight="1" />
 
                 <ImageView
-                    android:id="@+id/rw0kdc4ygjor"
+                    android:id="@+id/settingsBtn"
                     android:layout_width="11dp"
                     android:layout_height="20dp"
                     android:src="@drawable/setting_btn"
-                    android:scaleType="fitXY" />
+                    android:scaleType="fitXY"
+                    android:clickable="true"
+                    android:focusable="true" />
             </LinearLayout>
 
             <View

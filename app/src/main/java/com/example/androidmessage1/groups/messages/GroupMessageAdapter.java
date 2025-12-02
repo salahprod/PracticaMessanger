@@ -1,5 +1,6 @@
 package com.example.androidmessage1.groups.messages;
 
+import android.content.Context;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -11,6 +12,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
 import com.example.androidmessage1.R;
+import com.example.androidmessage1.message.FontSizeManager;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
@@ -26,16 +28,30 @@ public class GroupMessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
     private List<GroupMessage> messages;
     private String currentUserId;
     private String groupId;
+    private Context context;
+    private float currentFontSize;
 
     private static final int TYPE_MY_MESSAGE = 1;
     private static final int TYPE_OTHER_MESSAGE = 2;
 
+    public GroupMessageAdapter(List<GroupMessage> messages, String groupId, Context context){
+        this.messages = messages;
+        this.groupId = groupId;
+        this.context = context;
+        this.currentUserId = FirebaseAuth.getInstance().getCurrentUser() != null
+                ? FirebaseAuth.getInstance().getCurrentUser().getUid()
+                : "";
+        this.currentFontSize = FontSizeManager.getFontSize(context);
+    }
+
+    // Старый конструктор для обратной совместимости
     public GroupMessageAdapter(List<GroupMessage> messages, String groupId){
         this.messages = messages;
         this.groupId = groupId;
         this.currentUserId = FirebaseAuth.getInstance().getCurrentUser() != null
                 ? FirebaseAuth.getInstance().getCurrentUser().getUid()
                 : "";
+        this.currentFontSize = 14; // Значение по умолчанию
     }
 
     @NonNull
@@ -63,10 +79,16 @@ public class GroupMessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             myHolder.messageTv.setText(message.getText());
             myHolder.dateTv.setText(message.getDate());
 
+            // ПРИМЕНЯЕМ РАЗМЕР ШРИФТА К ТЕКСТУ СООБЩЕНИЯ
+            myHolder.messageTv.setTextSize(currentFontSize);
+
         } else if (holder instanceof OtherMessageViewHolder) {
             OtherMessageViewHolder otherHolder = (OtherMessageViewHolder) holder;
             otherHolder.messageTv.setText(message.getText());
             otherHolder.dateTv.setText(message.getDate());
+
+            // ПРИМЕНЯЕМ РАЗМЕР ШРИФТА К ТЕКСТУ СООБЩЕНИЯ
+            otherHolder.messageTv.setTextSize(currentFontSize);
 
             // Загружаем данные отправителя с учетом кастомных настроек
             loadSenderDataWithCustomSettings(message.getOwnerId(), message.getSenderName(),
@@ -206,6 +228,14 @@ public class GroupMessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         // Здесь можно добавить проверку времени, если нужно
 
         return false;
+    }
+
+    // Метод для обновления размера шрифта
+    public void updateFontSize() {
+        if (context != null) {
+            this.currentFontSize = FontSizeManager.getFontSize(context);
+        }
+        notifyDataSetChanged(); // Обновляем все сообщения с новым размером шрифта
     }
 
     // ViewHolder для ваших сообщений (справа) - message_from_curr_user_rv_item.xml

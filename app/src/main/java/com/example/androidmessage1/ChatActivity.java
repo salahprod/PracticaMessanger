@@ -1,5 +1,6 @@
 package com.example.androidmessage1;
 
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -20,6 +21,8 @@ import com.bumptech.glide.Glide;
 import com.example.androidmessage1.databinding.ActivityChatBinding;
 import com.example.androidmessage1.message.Message;
 import com.example.androidmessage1.message.MessageAdapter;
+import com.example.androidmessage1.message.FontSizeManager;
+import com.example.androidmessage1.message.SizeFontActivity;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
@@ -64,6 +67,7 @@ public class ChatActivity extends AppCompatActivity {
 
     // Константы для выбора файлов
     private static final int PICK_FILE_REQUEST = 1001;
+    private static final int FONT_SIZE_SETTINGS_REQUEST = 1002;
 
     // Переменные для хранения выбранных файлов
     private List<Uri> selectedFiles = new ArrayList<>();
@@ -244,8 +248,8 @@ public class ChatActivity extends AppCompatActivity {
     private void initializeViews() {
         binding.messagesRv.setLayoutManager(new LinearLayoutManager(this));
 
-        // Создаем адаптер с поддержкой кликов
-        messageAdapter = new MessageAdapter(messages, chatId, otherUserId);
+        // Создаем адаптер с поддержкой кликов и контекстом
+        messageAdapter = new MessageAdapter(messages, chatId, otherUserId, this);
         binding.messagesRv.setAdapter(messageAdapter);
 
         // Настраиваем обработчик кликов для сообщений
@@ -297,8 +301,35 @@ public class ChatActivity extends AppCompatActivity {
             }
         });
 
+        // Добавляем кнопку для настроек шрифта
+        setupFontSizeButton();
+
         // Настройка RecyclerView для превью выбранных файлов
         setupSelectedFilesPreview();
+    }
+
+    // Метод для настройки кнопки изменения размера шрифта
+    private void setupFontSizeButton() {
+        // Можно добавить кнопку в меню или использовать существующую
+        // Например, добавим в тулбар или как отдельную кнопку
+        // Для примера, добавим обработчик долгого нажатия на заголовок
+
+        binding.chatUserName.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                openFontSizeSettings();
+                return true;
+            }
+        });
+
+        // Или добавим кнопку в меню настроек чата
+        // Создаем меню с пунктом "Font Size"
+    }
+
+    // Метод для открытия настроек размера шрифта
+    private void openFontSizeSettings() {
+        Intent intent = new Intent(ChatActivity.this, SizeFontActivity.class);
+        startActivityForResult(intent, FONT_SIZE_SETTINGS_REQUEST);
     }
 
     // ДОБАВЛЕННЫЙ МЕТОД: Открытие настроек профиля чата
@@ -619,6 +650,11 @@ public class ChatActivity extends AppCompatActivity {
         if (resultCode == RESULT_OK) {
             if (requestCode == PICK_FILE_REQUEST) {
                 handleSelectedFiles(data);
+            } else if (requestCode == FONT_SIZE_SETTINGS_REQUEST) {
+                // При возвращении из настроек шрифта обновляем сообщения
+                if (messageAdapter != null) {
+                    messageAdapter.updateFontSize();
+                }
             }
         }
     }
@@ -1392,6 +1428,11 @@ public class ChatActivity extends AppCompatActivity {
             markAllMessagesAsRead();
             // При возвращении в чат обновляем кастомные настройки
             loadCustomSettings();
+
+            // Обновляем размер шрифта при возвращении в чат
+            if (messageAdapter != null) {
+                messageAdapter.updateFontSize();
+            }
         }
         // Обновляем онлайн статус при возвращении в приложение
         updateUserOnlineStatus();
