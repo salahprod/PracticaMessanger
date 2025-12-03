@@ -56,6 +56,14 @@
             android:name=".SettingsMainActivity"
             android:exported="false"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+
+        <!-- ДОБАВЛЕНО: Активность статистики -->
+        <activity
+            android:name=".StatisticsActivity"
+            android:screenOrientation="portrait"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+
         <activity
             android:name=".groups.AddMembersActivity"
             android:screenOrientation="portrait"

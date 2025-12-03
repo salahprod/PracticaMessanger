@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Polygram</string>
-    <string name="exit_chat">Exit chat</string>
+    <string name="exit_chat">Выйти из чата</string>
     <string name="user_name">User Name</string>
     <string name="online">online</string>
     <string name="user_avatar">User avatar</string>
     <string name="selected_files_count">Выбрано файлов: 0</string>
     <string name="clear">Очистить</string>
-    <string name="type_message_hint">Type your message...</string>
-    <string name="select_wallpaper">Select Wallpaper</string>
+    <string name="type_message_hint">Введите сообщение...</string>
+    <string name="select_wallpaper">Выбор обоев</string>
     <string name="clear_wallpaper">Clear</string>
     <string name="back">Back</string>
     <string name="wallpaper">Wallpaper</string>

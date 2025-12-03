@@ -29,7 +29,7 @@
                 android:layout_marginStart="7dp"
                 android:layout_height="wrap_content"
                 android:layout_width="wrap_content"
-                android:text="PROFILE" />
+                android:text="Профиль" />
 
             <LinearLayout
                 android:id="@+id/r692c2rc2v1e"
@@ -75,9 +75,9 @@
                 android:layout_marginStart="42dp"
                 android:layout_marginBottom="6dp"
                 android:fontFamily="@font/montserrat_bold"
-                android:text="NAME"
+                android:text="Имя"
                 android:textColor="#000000"
-                android:textSize="15sp"
+                android:textSize="16sp"
                 android:textStyle="bold" />
 
             <LinearLayout
@@ -123,14 +123,14 @@
             <TextView
                 android:id="@+id/rv99bsvrtqi8"
                 android:textColor="#000000"
-                android:textSize="15sp"
+                android:textSize="16sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="6dp"
                 android:layout_marginStart="41dp"
                 android:fontFamily="@font/montserrat_bold"
                 android:layout_height="wrap_content"
                 android:layout_width="wrap_content"
-                android:text="EMAIL" />
+                android:text="Почта" />
 
             <!-- Email поле без возможности редактирования -->
             <TextView
@@ -163,12 +163,12 @@
                 <TextView
                     android:id="@+id/rscsc73a31i"
                     android:textColor="#000000"
-                    android:textSize="15sp"
+                    android:textSize="16sp"
                     android:fontFamily="@font/montserrat_bold"
                     android:textStyle="bold"
                     android:layout_height="wrap_content"
                     android:layout_width="wrap_content"
-                    android:text="SETTINGS" />
+                    android:text="Настройки" />
 
                 <View
                     android:layout_width="0dp"

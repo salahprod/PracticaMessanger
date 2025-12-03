@@ -20,7 +20,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:hint="Search users..."
+            android:hint="Поиск пользователей..."
             android:background="@drawable/search_background"
             android:paddingStart="16dp"
             android:paddingEnd="16dp"

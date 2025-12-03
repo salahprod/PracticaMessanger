@@ -54,7 +54,7 @@
                     android:layout_marginBottom="6dp"
                     android:layout_height="wrap_content"
                     android:layout_width="wrap_content"
-                    android:text="Group Name"
+                    android:text="Название группы"
                     android:textStyle="bold"
                     />
 
@@ -65,7 +65,7 @@
                     android:textSize="12sp"
                     android:layout_height="wrap_content"
                     android:layout_width="wrap_content"
-                    android:text="0 members"
+                    android:text="0 участник(-ов)"
                     android:layout_marginBottom="16dp"
                     />
 
@@ -110,7 +110,7 @@
                         android:layout_marginBottom="2dp"
                         android:layout_height="wrap_content"
                         android:layout_width="wrap_content"
-                        android:text="LEAVE"
+                        android:text="ВЫЙТИ"
                         />
 
                     <LinearLayout
@@ -140,7 +140,7 @@
                 android:id="@+id/emptyMembersText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="No members in this group"
+                android:text="Нет участников в группе"
                 android:textColor="#676767"
                 android:textSize="14sp"
                 android:gravity="center"

@@ -22,6 +22,7 @@ import com.bumptech.glide.Glide;
 import com.caverock.androidsvg.SVG;
 import com.caverock.androidsvg.SVGParseException;
 import com.example.androidmessage1.databinding.ActivityChatBinding;
+import com.example.androidmessage1.message.ChatTimeTracker;
 import com.example.androidmessage1.message.Message;
 import com.example.androidmessage1.message.MessageAdapter;
 import com.example.androidmessage1.message.FontSizeManager;
@@ -84,6 +85,9 @@ public class ChatActivity extends AppCompatActivity {
     private static final String WALLPAPER_KEY_PREFIX = "wallpaper_";
     private SharedPreferences wallpaperPrefs;
 
+    // Трекер времени в чатах
+    private ChatTimeTracker chatTimeTracker;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -102,6 +106,9 @@ public class ChatActivity extends AppCompatActivity {
 
         // Инициализируем SharedPreferences для обоев
         wallpaperPrefs = getSharedPreferences(WALLPAPER_PREFS, Context.MODE_PRIVATE);
+
+        // Инициализируем трекер времени
+        chatTimeTracker = ChatTimeTracker.getInstance(this);
 
         // Если chatId не передан, но есть otherUserId, находим или создаем чат
         if (chatId == null && otherUserId != null) {
@@ -977,12 +984,33 @@ public class ChatActivity extends AppCompatActivity {
                         if (task.isSuccessful()) {
                             String lastMessageText = getLastMessageText(messageType, fileName);
                             updateLastMessageInChat(lastMessageText, System.currentTimeMillis());
+
+                            // Отслеживаем отправку файла для статистики
+                            trackMessageSentForStatistics(fileName);
+
                             Log.d("ChatActivity", "File message sent: " + messageType);
                         } else {
                             Toast.makeText(ChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
                         }
                     }
                 });
+    }
+
+    private void trackMessageSentForStatistics(String fileName) {
+        if (otherUserId != null) {
+            // Определяем, группа это или обычный чат
+            boolean isGroup = false; // Обычный чат
+            String chatName = otherUserId; // Используем имя пользователя или имя чата
+
+            // Получаем имя чата из intent или из других данных
+            chatName = getIntent().getStringExtra("chatName");
+            if (chatName == null) {
+                // Если имя не передано, используем ID
+                chatName = "Chat " + otherUserId.substring(0, 8);
+            }
+
+            chatTimeTracker.trackMessageSent(chatId, chatName, isGroup);
+        }
     }
 
     private String getFileMessageText(String messageType, String fileName) {
@@ -1329,6 +1357,10 @@ public class ChatActivity extends AppCompatActivity {
                     public void onComplete(@NonNull Task<Void> task) {
                         if (task.isSuccessful()) {
                             updateLastMessageInChat(messageText, System.currentTimeMillis());
+
+                            // Отслеживаем отправку сообщения для статистики
+                            trackMessageSentForStatistics("text message");
+
                             Log.d("ChatActivity", "Message sent with isRead = false (will be marked as read by receiver)");
                         } else {
                             Toast.makeText(ChatActivity.this, "Send error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
@@ -1573,6 +1605,22 @@ public class ChatActivity extends AppCompatActivity {
 
             // Обновляем обои при возвращении в чат
             loadChatWallpaper();
+
+            // Начинаем отслеживать время в чате
+            if (otherUserId != null) {
+                // Определяем, группа это или обычный чат
+                boolean isGroup = false; // Обычный чат
+                String chatName = otherUserId; // Используем имя пользователя или имя чата
+
+                // Получаем имя чата из intent или из других данных
+                chatName = getIntent().getStringExtra("chatName");
+                if (chatName == null) {
+                    // Если имя не передано, используем ID
+                    chatName = "Chat " + otherUserId.substring(0, 8);
+                }
+
+                chatTimeTracker.trackChatEnter(chatId, chatName, isGroup);
+            }
         }
         // Обновляем онлайн статус при возвращении в приложение
         updateUserOnlineStatus();
@@ -1584,6 +1632,8 @@ public class ChatActivity extends AppCompatActivity {
         if (chatId != null && otherUserId != null) {
             markAllMessagesAsRead();
         }
+        // Прекращаем отслеживать время в чате
+        chatTimeTracker.trackChatExit();
     }
 
     @Override
@@ -1598,6 +1648,9 @@ public class ChatActivity extends AppCompatActivity {
         if (chatId != null && otherUserId != null) {
             markAllMessagesAsRead();
         }
+
+        // Прекращаем отслеживать время в чате
+        chatTimeTracker.trackChatExit();
 
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null && binding.messageEt.hasFocus()) {

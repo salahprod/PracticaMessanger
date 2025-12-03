@@ -42,9 +42,9 @@
                         android:layout_marginTop="34dp"
                         android:layout_marginBottom="17dp"
                         android:fontFamily="@font/montserrat_extrabold"
-                        android:text="Login Form"
+                        android:text="Форма Регистрации"
                         android:textColor="#000000"
-                        android:textSize="36sp"
+                        android:textSize="26sp"
                         android:textStyle="bold" />
 
                     <LinearLayout
@@ -71,7 +71,7 @@
                             android:background="@null"
                             android:fontFamily="@font/montserrat_medium"
                             android:gravity="center"
-                            android:hint="Login"
+                            android:hint="Войти"
                             android:inputType="text"
                             android:paddingVertical="15dp"
                             android:textColorHint="#000000"
@@ -97,7 +97,7 @@
                                 android:layout_height="wrap_content"
                                 android:fontFamily="@font/montserrat_medium"
                                 android:gravity="center"
-                                android:text="Sign up"
+                                android:text="Запись"
                                 android:textColor="#FFFFFF"
                                 android:textSize="20sp" />
                         </LinearLayout>
@@ -112,7 +112,7 @@
                         android:background="@drawable/stroke"
                         android:elevation="4dp"
                         android:fontFamily="@font/montserrat_medium"
-                        android:hint="Login"
+                        android:hint="Логин"
                         android:inputType="text"
                         android:paddingHorizontal="36dp"
                         android:paddingVertical="17dp"
@@ -128,7 +128,7 @@
                         android:background="@drawable/stroke"
                         android:elevation="4dp"
                         android:fontFamily="@font/montserrat_medium"
-                        android:hint="Email Address"
+                        android:hint="Адрес почты"
                         android:inputType="text"
                         android:paddingHorizontal="33dp"
                         android:paddingVertical="19dp"
@@ -144,7 +144,7 @@
                         android:background="@drawable/stroke"
                         android:elevation="4dp"
                         android:fontFamily="@font/montserrat_medium"
-                        android:hint="Password"
+                        android:hint="Пароль"
                         android:inputType="text"
                         android:paddingHorizontal="35dp"
                         android:paddingVertical="19dp"
@@ -169,7 +169,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:fontFamily="@font/montserrat_medium"
-                            android:text="Sign up"
+                            android:text="Запись"
                             android:textColor="#FFFFFF"
                             android:textSize="20sp" />
                     </LinearLayout>

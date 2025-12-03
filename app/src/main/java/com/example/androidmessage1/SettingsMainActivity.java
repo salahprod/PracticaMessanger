@@ -24,7 +24,7 @@ public class SettingsMainActivity extends AppCompatActivity {
         ImageView backButton = findViewById(R.id.back_button);
         View changeTopicsLayout = findViewById(R.id.change_topics_layout);
         ImageView changeSizeArrow = findViewById(R.id.change_size_arrow);
-
+        ImageView statisticsArrow = findViewById(R.id.statistics_arrow);
         View statisticsLayout = findViewById(R.id.statistics_layout);
 
         // Обработчик нажатия на кнопку "Назад" (совместимый подход)
@@ -69,15 +69,22 @@ public class SettingsMainActivity extends AppCompatActivity {
             });
         }
 
+        // Обработчик нажатия на стрелку "Statistics"
+        if (statisticsArrow != null) {
+            statisticsArrow.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    navigateToStatisticsActivity();
+                }
+            });
+        }
 
-
-        // Обработчик нажатия на "Statistics"
+        // Обработчик нажатия на всю область "Statistics"
         if (statisticsLayout != null) {
             statisticsLayout.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    Toast.makeText(SettingsMainActivity.this, "Statistics clicked", Toast.LENGTH_SHORT).show();
-                    // Здесь можно добавить логику для статистики
+                    navigateToStatisticsActivity();
                 }
             });
         }
@@ -85,6 +92,11 @@ public class SettingsMainActivity extends AppCompatActivity {
 
     private void navigateToSizeFontActivity() {
         Intent intent = new Intent(SettingsMainActivity.this, SizeFontActivity.class);
+        startActivity(intent);
+    }
+
+    private void navigateToStatisticsActivity() {
+        Intent intent = new Intent(SettingsMainActivity.this, StatisticsActivity.class);
         startActivity(intent);
     }
 }

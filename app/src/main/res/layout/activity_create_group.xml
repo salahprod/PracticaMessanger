@@ -32,9 +32,9 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Create New Group"
+                android:text="Создание новой группы"
                 android:textColor="@android:color/white"
-                android:textSize="18sp"
+                android:textSize="14sp"
                 android:textStyle="bold"
                 android:layout_centerInParent="true" />
 
@@ -43,7 +43,7 @@
                 android:id="@+id/create_group_btn"
                 android:layout_width="wrap_content"
                 android:layout_height="36dp"
-                android:text="Create"
+                android:text="Создать"
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/white"
@@ -84,7 +84,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Add Group Photo"
+                    android:text="Добавить новое фото группы"
                     android:textColor="?attr/colorPrimary"
                     android:textSize="16sp"
                     android:textStyle="bold" />
@@ -108,7 +108,7 @@
                     android:id="@+id/group_name_et"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Group Name"
+                    android:hint="Название группы"
                     android:textSize="16sp"
                     android:maxLines="1"
                     android:paddingVertical="16dp" />
@@ -128,7 +128,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Add Members"
+                android:text="Добавить участников"
                 android:textSize="20sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
@@ -149,7 +149,7 @@
                     android:id="@+id/search_et"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Search users"
+                    android:hint="Поиск участников"
                     android:textSize="16sp"
                     android:maxLines="1"
                     android:paddingVertical="16dp" />
@@ -162,7 +162,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:gravity="center"
-                android:text="Select at least 1 member"
+                android:text="Выберите минимум 1 участника"
                 android:textColor="#666666"
                 android:textSize="14sp" />
 

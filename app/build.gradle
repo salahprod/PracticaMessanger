@@ -63,5 +63,14 @@ dependencies {
     annotationProcessor 'com.github.bumptech.glide:compiler:4.14.2'
     implementation 'com.google.firebase:firebase-storage:20.0.0'
     implementation 'com.caverock:androidsvg:1.4'
+    implementation 'com.google.firebase:firebase-database:20.0.0'
+    implementation 'com.google.firebase:firebase-auth:22.0.0'
+    implementation 'com.google.firebase:firebase-storage:20.0.0'
+
+    // Glide для загрузки изображений (если ещё нет)
+    implementation 'com.github.bumptech.glide:glide:4.15.1'
+
+    // Android SVG (если используется для обоев)
+    implementation 'com.caverock:androidsvg:1.4'
 
 }

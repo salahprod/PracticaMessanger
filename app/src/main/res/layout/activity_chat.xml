@@ -145,7 +145,7 @@
         android:background="@drawable/message_et_shape"
         android:hint="@string/type_message_hint"
         android:padding="13dp"
-        android:textSize="14dp"
+        android:textSize="12dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toEndOf="@+id/send_video_btn"
         app:layout_constraintEnd_toStartOf="@+id/send_message_btn" />

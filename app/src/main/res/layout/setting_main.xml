@@ -37,9 +37,9 @@
             android:layout_weight="1"
             android:fontFamily="@font/montserrat_bold"
             android:gravity="center"
-            android:text="SETTINGS"
+            android:text="Настройки"
             android:textColor="#000000"
-            android:textSize="48sp"
+            android:textSize="38sp"
             android:textStyle="bold" />
 
         <!-- Empty view for symmetry -->
@@ -83,7 +83,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:fontFamily="@font/montserrat_bold"
-                        android:text="Change Size Font"
+                        android:text="Изменить размер шрифта"
                         android:textColor="#000000"
                         android:textSize="20sp"
                         android:textStyle="bold" />
@@ -125,7 +125,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:fontFamily="@font/montserrat_bold"
-                        android:text="Statistics"
+                        android:text="Статистика"
                         android:textColor="#000000"
                         android:textSize="20sp"
                         android:textStyle="bold" />
