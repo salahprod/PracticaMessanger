@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/lr270d4c5fc9dc6fc"
@@ -15,7 +16,9 @@
         android:src="@drawable/exit_left"
         android:contentDescription="Back arrow"
         android:clickable="true"
-        android:focusable="true" />
+        android:focusable="true"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
     <!-- SIZE FONT text at exact position from SVG -->
     <TextView
@@ -28,136 +31,120 @@
         android:text="SIZE FONT"
         android:textColor="#000000"
         android:textSize="48sp"
-        android:textStyle="bold" />
+        android:textStyle="bold"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
     <!-- TextView for top scale value (10 sp) -->
     <TextView
         android:id="@+id/top_scale_value"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginLeft="230dp"
         android:layout_marginTop="315dp"
         android:fontFamily="@font/montserrat_medium"
         android:text="10 sp"
         android:textColor="#000000"
         android:textSize="18sp"
-        android:textStyle="bold" />
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:layout_marginEnd="120dp" />
 
-    <!-- TextView for bottom scale value (22 sp) -->
+    <!-- TextView for bottom scale value (24 sp) -->
     <TextView
         android:id="@+id/bottom_scale_value"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginLeft="230dp"
         android:layout_marginTop="510dp"
         android:fontFamily="@font/montserrat_medium"
-        android:text="22 sp"
+        android:text="24 sp"
         android:textColor="#000000"
         android:textSize="18sp"
-        android:textStyle="bold" />
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:layout_marginEnd="120dp" />
 
-    <!-- Vertical scale line (кликабельная область для перемещения ползунка) -->
-    <View
-        android:id="@+id/vertical_line"
-        android:layout_width="30dp"
-        android:layout_height="288dp"
+    <!-- Контейнер для шкалы - центрирован по горизонтали -->
+    <FrameLayout
+        android:id="@+id/scale_area"
+        android:layout_width="50dp"
+        android:layout_height="300dp"
         android:layout_marginTop="327.5dp"
-        android:layout_marginLeft="185.5dp"
-        android:background="@android:color/transparent"
-        android:clickable="true"
-        android:focusable="true" />
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintHorizontal_bias="0.5">
 
-    <!-- Фоновая линия шкалы -->
-    <View
-        android:layout_width="2dp"
-        android:layout_height="195dp"
-        android:layout_marginTop="327.5dp"
-        android:layout_marginLeft="197.5dp"
-        android:background="#000000" />
+        <!-- Vertical scale line (кликабельная область) -->
+        <View
+            android:id="@+id/vertical_line"
+            android:layout_width="30dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="center_horizontal"
+            android:background="@android:color/transparent"
+            android:clickable="true"
+            android:focusable="true" />
 
-    <!-- Scale marks -->
-    <!-- Mark at 327 -->
-    <View
-        android:layout_width="10dp"
-        android:layout_height="2dp"
-        android:layout_marginTop="327.5dp"
-        android:layout_marginLeft="193dp"
-        android:background="#000000" />
-    <View
-        android:layout_width="10dp"
-        android:layout_height="2dp"
-        android:layout_marginTop="327.5dp"
-        android:layout_marginLeft="198.5dp"
-        android:background="#000000" />
+        <!-- Фоновая линия шкалы -->
+        <View
+            android:id="@+id/scale_line"
+            android:layout_width="2dp"
+            android:layout_height="195dp"
+            android:layout_gravity="center_horizontal|top"
+            android:background="#000000" />
 
-    <!-- Mark at 375 -->
-    <View
-        android:layout_width="10dp"
-        android:layout_height="2dp"
-        android:layout_marginTop="375.5dp"
-        android:layout_marginLeft="193dp"
-        android:background="#000000" />
-    <View
-        android:layout_width="10dp"
-        android:layout_height="2dp"
-        android:layout_marginTop="375.5dp"
-        android:layout_marginLeft="198.5dp"
-        android:background="#000000" />
+        <!-- Верхняя метка (10 sp) -->
+        <View
+            android:id="@+id/mark_top"
+            android:layout_width="10dp"
+            android:layout_height="2dp"
+            android:layout_gravity="center_horizontal|top"
+            android:layout_marginTop="0dp"
+            android:background="#000000" />
 
-    <!-- Mark at 422 -->
-    <View
-        android:layout_width="10dp"
-        android:layout_height="2dp"
-        android:layout_marginTop="422.5dp"
-        android:layout_marginLeft="193dp"
-        android:background="#000000" />
-    <View
-        android:layout_width="10dp"
-        android:layout_height="2dp"
-        android:layout_marginTop="422.5dp"
-        android:layout_marginLeft="198.5dp"
-        android:background="#000000" />
+        <!-- Нижняя метка (24 sp) -->
+        <View
+            android:id="@+id/mark_bottom"
+            android:layout_width="10dp"
+            android:layout_height="2dp"
+            android:layout_gravity="center_horizontal|top"
+            android:layout_marginTop="194dp"
+            android:background="#000000" />
 
-    <!-- Mark at 469 -->
-    <View
-        android:layout_width="10dp"
-        android:layout_height="2dp"
-        android:layout_marginTop="469.5dp"
-        android:layout_marginLeft="193dp"
-        android:background="#000000" />
-    <View
-        android:layout_width="10dp"
-        android:layout_height="2dp"
-        android:layout_marginTop="469.5dp"
-        android:layout_marginLeft="198.5dp"
-        android:background="#000000" />
+        <!-- Дополнительные метки -->
+        <View
+            android:layout_width="10dp"
+            android:layout_height="2dp"
+            android:layout_gravity="center_horizontal|top"
+            android:layout_marginTop="48dp"
+            android:background="#000000" />
 
-    <!-- Mark at 521 -->
-    <View
-        android:layout_width="10dp"
-        android:layout_height="2dp"
-        android:layout_marginTop="521.5dp"
-        android:layout_marginLeft="194dp"
-        android:background="#000000" />
-    <View
-        android:layout_width="10dp"
-        android:layout_height="2dp"
-        android:layout_marginTop="521.5dp"
-        android:layout_marginLeft="198.5dp"
-        android:background="#000000" />
+        <View
+            android:layout_width="10dp"
+            android:layout_height="2dp"
+            android:layout_gravity="center_horizontal|top"
+            android:layout_marginTop="95dp"
+            android:background="#000000" />
 
+        <View
+            android:layout_width="10dp"
+            android:layout_height="2dp"
+            android:layout_gravity="center_horizontal|top"
+            android:layout_marginTop="142dp"
+            android:background="#000000" />
 
+        <!-- Slider circle -->
+        <ImageView
+            android:id="@+id/slider_circle"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_gravity="center_horizontal|top"
+            android:src="@drawable/circle_slider"
+            android:contentDescription="Font size slider"
+            android:clickable="true"
+            android:focusable="true" />
 
-    <!-- Slider circle at position 375 -->
-    <ImageView
-        android:id="@+id/slider_circle"
-        android:layout_width="16dp"
-        android:layout_height="16dp"
-        android:layout_marginTop="368.5dp"
-        android:layout_marginLeft="191dp"
-        android:src="@drawable/circle_slider"
-        android:contentDescription="Font size slider"
-        android:clickable="true"
-        android:focusable="true" />
+    </FrameLayout>
 
-</FrameLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

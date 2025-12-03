@@ -6,7 +6,7 @@ import android.content.SharedPreferences;
 public class FontSizeManager {
     private static final String PREF_NAME = "font_size_prefs";
     private static final String KEY_FONT_SIZE = "font_size_sp";
-    private static final float DEFAULT_FONT_SIZE = 14f; // Размер по умолчанию
+    private static final float DEFAULT_FONT_SIZE = 14f;
 
     public static void saveFontSize(Context context, float fontSize) {
         SharedPreferences preferences = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
