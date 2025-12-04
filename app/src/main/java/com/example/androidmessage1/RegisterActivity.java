@@ -21,6 +21,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 public class RegisterActivity extends AppCompatActivity {
 
@@ -33,6 +34,27 @@ public class RegisterActivity extends AppCompatActivity {
 
     private ActivityRegisterBinding binding;
     private static final String TAG = "RegisterActivity";
+
+    // Паттерны для проверки почтовых доменов
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+            "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+    );
+
+    // Список разрешенных почтовых доменов
+    private static final String[] ALLOWED_DOMAINS = {
+            "gmail.com",
+            "mail.ru",
+            "yandex.ru",
+            "yandex.com",
+            "yandex.ua",
+            "yandex.kz",
+            "yandex.by",
+            "inbox.ru",
+            "list.ru",
+            "bk.ru",
+            "ya.ru",
+            "rambler.ru"
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,7 +75,7 @@ public class RegisterActivity extends AppCompatActivity {
             public void onClick(View v) {
 
                 String login = binding.loginText2.getText().toString().trim();
-                String email = binding.emailText2.getText().toString().trim();
+                String email = binding.emailText2.getText().toString().trim().toLowerCase();
                 String password = binding.passwordText2.getText().toString().trim();
 
                 if (login.isEmpty() || password.isEmpty() || email.isEmpty()) {
@@ -63,6 +85,22 @@ public class RegisterActivity extends AppCompatActivity {
 
                 if (password.length() < 6) {
                     Toast.makeText(getApplicationContext(), "Password must be at least 6 characters", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                // Проверка формата email
+                if (!isValidEmail(email)) {
+                    Toast.makeText(getApplicationContext(),
+                            "Please enter a valid email (Gmail, Yandex, or Mail.ru)",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+
+                // Проверка разрешенных доменов
+                if (!isAllowedEmailDomain(email)) {
+                    Toast.makeText(getApplicationContext(),
+                            "Please use Gmail, Yandex, or Mail.ru email address",
+                            Toast.LENGTH_LONG).show();
                     return;
                 }
 
@@ -135,6 +173,38 @@ public class RegisterActivity extends AppCompatActivity {
             Intent intent = new Intent(RegisterActivity.this, PoliticalActivity.class);
             startActivity(intent);
         });
+    }
+
+    // Метод для проверки общего формата email
+    private boolean isValidEmail(String email) {
+        if (email == null || email.isEmpty()) {
+            return false;
+        }
+        return EMAIL_PATTERN.matcher(email).matches();
+    }
+
+    // Метод для проверки разрешенных доменов
+    private boolean isAllowedEmailDomain(String email) {
+        if (email == null || email.isEmpty()) {
+            return false;
+        }
+
+        // Извлекаем домен из email (часть после @)
+        String[] parts = email.split("@");
+        if (parts.length != 2) {
+            return false;
+        }
+
+        String domain = parts[1].toLowerCase().trim();
+
+        // Проверяем домен в списке разрешенных
+        for (String allowedDomain : ALLOWED_DOMAINS) {
+            if (domain.equals(allowedDomain)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void setupOnDisconnectForNewUser(String userId, long currentTime, String currentTimeString, String currentDateString) {
