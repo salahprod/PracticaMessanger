@@ -51,7 +51,7 @@ public class GroupMessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         this.currentUserId = FirebaseAuth.getInstance().getCurrentUser() != null
                 ? FirebaseAuth.getInstance().getCurrentUser().getUid()
                 : "";
-        this.currentFontSize = 14; // Значение по умолчанию
+        this.currentFontSize = FontSizeManager.getDefaultFontSize();
     }
 
     @NonNull

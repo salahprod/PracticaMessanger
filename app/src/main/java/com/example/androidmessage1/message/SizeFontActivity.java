@@ -27,6 +27,11 @@ public class SizeFontActivity extends AppCompatActivity {
     private float initialY;
     private float circleTopMargin;
 
+    // Константы для диапазона шрифта
+    private static final float MIN_FONT_SIZE = 10f;
+    private static final float MAX_FONT_SIZE = 24f;
+    private static final float FONT_SIZE_RANGE = MAX_FONT_SIZE - MIN_FONT_SIZE; // 14 единиц
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -123,12 +128,12 @@ public class SizeFontActivity extends AppCompatActivity {
             return;
         }
 
-        // Ограничиваем размер шрифта
-        if (fontSize < 10) fontSize = 10;
-        if (fontSize > 24) fontSize = 24;
+        // Ограничиваем размер шрифта диапазоном (10-24sp)
+        if (fontSize < MIN_FONT_SIZE) fontSize = MIN_FONT_SIZE;
+        if (fontSize > MAX_FONT_SIZE) fontSize = MAX_FONT_SIZE;
 
         // Конвертируем шрифт в позицию (10-24sp в диапазон minY-maxY)
-        float normalized = (fontSize - 10) / 14f; // 10-24 = 14 единиц
+        float normalized = (fontSize - MIN_FONT_SIZE) / FONT_SIZE_RANGE; // 10-24 = 14 единиц
         float position = minY + normalized * (maxY - minY);
 
         // Устанавливаем позицию
@@ -227,14 +232,18 @@ public class SizeFontActivity extends AppCompatActivity {
     private float getFontSizeFromPosition(float position) {
         if (minY == maxY) {
             Log.e("SizeFontActivity", "minY == maxY, returning default 14sp");
-            return 14f;
+            return FontSizeManager.getDefaultFontSize();
         }
 
         float normalized = (position - minY) / (maxY - minY);
-        float fontSize = 10 + normalized * 14;
+        float fontSize = MIN_FONT_SIZE + normalized * FONT_SIZE_RANGE;
 
         // Округляем до целого
         fontSize = Math.round(fontSize);
+
+        // Ограничиваем диапазоном
+        if (fontSize < MIN_FONT_SIZE) fontSize = MIN_FONT_SIZE;
+        if (fontSize > MAX_FONT_SIZE) fontSize = MAX_FONT_SIZE;
 
         Log.d("SizeFontActivity", "Position " + position + " -> Font size " + fontSize);
         return fontSize;

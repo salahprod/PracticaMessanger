@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
@@ -43,7 +42,6 @@ import com.google.firebase.storage.FirebaseStorage;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
 
-import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -66,19 +64,23 @@ public class ProfileFragment extends Fragment {
                 new ActivityResultCallback<ActivityResult>() {
                     @Override
                     public void onActivityResult(ActivityResult result) {
+
+                        if (binding == null) return;  // фрагмент уничтожен
+
                         if (result.getResultCode() == Activity.RESULT_OK &&
                                 result.getData() != null &&
                                 result.getData().getData() != null) {
+
                             filePath = result.getData().getData();
-                            try {
-                                Bitmap bitmap = MediaStore.Images.Media.getBitmap(
-                                        requireContext().getContentResolver(), filePath);
-                                binding.profileImage.setImageBitmap(bitmap);
-                                uploadImageSimple(); // запускаем загрузку
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                                Toast.makeText(getContext(), "Error loading image", Toast.LENGTH_SHORT).show();
-                            }
+
+                            // ✔ Больше НЕ используем getBitmap — он вызывал вылет
+                            // Просто ставим выбранное фото через Glide
+                            Glide.with(requireContext())
+                                    .load(filePath)
+                                    .placeholder(R.drawable.artem)
+                                    .into(binding.profileImage);
+
+                            uploadImageSimple();
                         }
                     }
                 }
@@ -90,6 +92,7 @@ public class ProfileFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater,
                              @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
+
         binding = FragmentProfileBinding.inflate(inflater, container, false);
 
         if (FirebaseAuth.getInstance().getCurrentUser() == null) {
@@ -100,42 +103,15 @@ public class ProfileFragment extends Fragment {
 
         loadUserInfo();
 
-        binding.profileImage.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                selectImage();
-            }
-        });
+        binding.profileImage.setOnClickListener(v -> selectImage());
 
-        binding.logoutBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                logoutUser();
-            }
-        });
+        binding.logoutBtn.setOnClickListener(v -> logoutUser());
 
-        // Обработка нажатия на имя пользователя
-        binding.userNameEditText.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showEditNameDialog();
-            }
-        });
+        binding.userNameEditText.setOnClickListener(v -> showEditNameDialog());
 
-        binding.editNameBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showEditNameDialog();
-            }
-        });
+        binding.editNameBtn.setOnClickListener(v -> showEditNameDialog());
 
-        // Обработка нажатия на кнопку настроек (rw0kdc4ygjor)
-        binding.settingsBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openSettingsActivity();
-            }
-        });
+        binding.settingsBtn.setOnClickListener(v -> openSettingsActivity());
 
         return binding.getRoot();
     }
@@ -151,43 +127,31 @@ public class ProfileFragment extends Fragment {
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        if (!snapshot.exists()) return;
 
-                        // Загрузка имени пользователя
+                        if (!snapshot.exists() || binding == null) return;
+
                         String username = null;
-                        if (snapshot.child("login").exists()) {
-                            username = snapshot.child("login").getValue(String.class);
-                        } else if (snapshot.child("username").exists()) {
-                            username = snapshot.child("username").getValue(String.class);
-                        }
+                        if (snapshot.child("login").exists()) username = snapshot.child("login").getValue(String.class);
+                        else if (snapshot.child("username").exists()) username = snapshot.child("username").getValue(String.class);
 
-                        if (username != null && !username.isEmpty()) {
+                        if (username != null && !username.isEmpty())
                             binding.userNameEditText.setText(username);
-                        } else {
-                            // Если нет имени, используем часть email или "User"
+                        else {
                             String email = snapshot.child("email").getValue(String.class);
-                            if (email != null && email.contains("@")) {
+                            if (email != null && email.contains("@"))
                                 binding.userNameEditText.setText(email.substring(0, email.indexOf("@")));
-                            } else {
-                                binding.userNameEditText.setText("User");
-                            }
+                            else binding.userNameEditText.setText("User");
                         }
 
-                        // Загрузка email пользователя
                         String email = snapshot.child("email").getValue(String.class);
-                        if (email != null && !email.isEmpty()) {
+                        if (email != null && !email.isEmpty())
                             binding.rd6cte99r4eh.setText(email);
-                        } else {
-                            // Если нет email в базе, используем email из Firebase Auth
+                        else {
                             String authEmail = FirebaseAuth.getInstance().getCurrentUser().getEmail();
-                            if (authEmail != null && !authEmail.isEmpty()) {
-                                binding.rd6cte99r4eh.setText(authEmail);
-                            } else {
-                                binding.rd6cte99r4eh.setText("No email provided");
-                            }
+                            if (authEmail != null) binding.rd6cte99r4eh.setText(authEmail);
+                            else binding.rd6cte99r4eh.setText("No email provided");
                         }
 
-                        // Загрузка аватарки
                         if (snapshot.child("profileImage").exists()) {
                             String profileImage = snapshot.child("profileImage").getValue(String.class);
                             if (profileImage != null && !profileImage.isEmpty()) {
@@ -216,23 +180,13 @@ public class ProfileFragment extends Fragment {
         input.setText(binding.userNameEditText.getText().toString());
         builder.setView(input);
 
-        builder.setPositiveButton("Save", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                String newName = input.getText().toString().trim();
-                if (!newName.isEmpty()) {
-                    updateUserName(newName);
-                } else {
-                    Toast.makeText(getContext(), "Name cannot be empty", Toast.LENGTH_SHORT).show();
-                }
-            }
+        builder.setPositiveButton("Save", (dialog, which) -> {
+            String newName = input.getText().toString().trim();
+            if (!newName.isEmpty()) updateUserName(newName);
+            else Toast.makeText(getContext(), "Name cannot be empty", Toast.LENGTH_SHORT).show();
         });
-        builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                dialog.cancel();
-            }
-        });
+
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
 
         builder.show();
     }
@@ -241,119 +195,65 @@ public class ProfileFragment extends Fragment {
         String userId = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
         HashMap<String, Object> updates = new HashMap<>();
-        // Проверяем, какое поле используется для имени в вашей базе
-        updates.put("login", newName); // или "username" в зависимости от вашей структуры
+        updates.put("login", newName);
 
         FirebaseDatabase.getInstance().getReference()
                 .child("Users")
                 .child(userId)
                 .updateChildren(updates)
-                .addOnSuccessListener(new OnSuccessListener<Void>() {
-                    @Override
-                    public void onSuccess(Void unused) {
+                .addOnSuccessListener(unused -> {
+                    if (binding != null)
                         binding.userNameEditText.setText(newName);
-                        Toast.makeText(getContext(), "Name updated successfully", Toast.LENGTH_SHORT).show();
-                        Log.d(TAG, "User name updated: " + newName);
-                    }
+
+                    Toast.makeText(getContext(), "Name updated successfully", Toast.LENGTH_SHORT).show();
                 })
-                .addOnFailureListener(new OnFailureListener() {
-                    @Override
-                    public void onFailure(@NonNull Exception e) {
-                        Toast.makeText(getContext(), "Failed to update name: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                        Log.e(TAG, "Failed to update name: " + e.getMessage());
-                    }
-                });
+                .addOnFailureListener(e ->
+                        Toast.makeText(getContext(), "Failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
     }
 
-    // Метод для открытия SettingsMainActivity
     private void openSettingsActivity() {
         Intent intent = new Intent(getContext(), SettingsMainActivity.class);
         startActivity(intent);
-
-        // Добавляем анимацию перехода (опционально)
-
     }
 
-    // ВАЖНО: Исправленный метод выхода
     private void logoutUser() {
         String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
         if (currentUserId != null) {
-            // Показываем сообщение о выходе
+
             Toast.makeText(getContext(), "Logging out...", Toast.LENGTH_SHORT).show();
 
-            // Сначала устанавливаем статус офлайн
             setUserOffline(currentUserId);
 
-            // Затем выходим из Firebase Auth
             FirebaseAuth.getInstance().signOut();
-
-            Log.d(TAG, "User logged out successfully: " + currentUserId);
-
-            Toast.makeText(getContext(), "Logged out successfully", Toast.LENGTH_SHORT).show();
         }
 
-        // Переходим на экран логина
         navigateToLogin();
     }
 
-    // ВАЖНО: Метод для установки статуса офлайн
     private void setUserOffline(String userId) {
         long currentTime = System.currentTimeMillis();
 
         SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
         SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy", Locale.getDefault());
-        String currentTimeString = timeFormat.format(new Date());
-        String currentDateString = dateFormat.format(new Date());
 
         HashMap<String, Object> updates = new HashMap<>();
         updates.put("isOnline", false);
         updates.put("lastOnline", currentTime);
-        updates.put("lastOnlineTime", currentTimeString);
-        updates.put("lastOnlineDate", currentDateString);
+        updates.put("lastOnlineTime", timeFormat.format(new Date()));
+        updates.put("lastOnlineDate", dateFormat.format(new Date()));
 
-        // Отменяем все onDisconnect операции
         cancelAllOnDisconnect(userId);
 
-        // Устанавливаем офлайн статус
         FirebaseDatabase.getInstance().getReference("Users")
                 .child(userId)
-                .updateChildren(updates)
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        Log.d(TAG, "User set offline successfully: " + userId);
-                    } else {
-                        Log.e(TAG, "Failed to set user offline", task.getException());
-                    }
-                });
+                .updateChildren(updates);
     }
 
-    // ВАЖНО: Метод для отмены всех onDisconnect операций
     private void cancelAllOnDisconnect(String userId) {
-        FirebaseDatabase.getInstance().getReference("Users")
-                .child(userId)
-                .child("isOnline")
-                .onDisconnect()
-                .cancel();
-
-        FirebaseDatabase.getInstance().getReference("Users")
-                .child(userId)
-                .child("lastOnline")
-                .onDisconnect()
-                .cancel();
-
-        FirebaseDatabase.getInstance().getReference("Users")
-                .child(userId)
-                .child("lastOnlineTime")
-                .onDisconnect()
-                .cancel();
-
-        FirebaseDatabase.getInstance().getReference("Users")
-                .child(userId)
-                .child("lastOnlineDate")
-                .onDisconnect()
-                .cancel();
-
-        Log.d(TAG, "All onDisconnect operations cancelled for user: " + userId);
+        FirebaseDatabase.getInstance().getReference("Users").child(userId).child("isOnline").onDisconnect().cancel();
+        FirebaseDatabase.getInstance().getReference("Users").child(userId).child("lastOnline").onDisconnect().cancel();
+        FirebaseDatabase.getInstance().getReference("Users").child(userId).child("lastOnlineTime").onDisconnect().cancel();
+        FirebaseDatabase.getInstance().getReference("Users").child(userId).child("lastOnlineDate").onDisconnect().cancel();
     }
 
     private void navigateToLogin() {
@@ -361,79 +261,42 @@ public class ProfileFragment extends Fragment {
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(intent);
 
-        // Завершаем текущую активность
-        if (getActivity() != null) {
-            getActivity().finish();
-        }
+        if (getActivity() != null) getActivity().finish();
     }
 
     private void selectImage() {
-        Intent intent = new Intent();
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
         intent.setType("image/*");
-        intent.setAction(Intent.ACTION_GET_CONTENT);
         pickImageActivityResultLauncher.launch(Intent.createChooser(intent, "Select Image"));
     }
 
     private void uploadImageSimple() {
+
         if (filePath == null) {
             Toast.makeText(getContext(), "Error: File not selected", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        if (FirebaseAuth.getInstance().getCurrentUser() == null) {
-            Toast.makeText(getContext(), "Пользователь не аутентифицирован", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
         String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
 
-        // фиксированное имя файла, чтобы всегда перезаписывать одно и то же место
         StorageReference storageRef = FirebaseStorage.getInstance()
                 .getReference()
                 .child("images")
                 .child(uid)
                 .child("profile.jpg");
 
-        Toast.makeText(getContext(), "Starting loading...", Toast.LENGTH_SHORT).show();
-
         UploadTask uploadTask = storageRef.putFile(filePath);
 
-        // Надёжный способ: после успешной загрузки получить downloadUrl через continueWithTask
-        uploadTask.continueWithTask(new Continuation<UploadTask.TaskSnapshot, Task<Uri>>() {
-            @Override
-            public Task<Uri> then(@NonNull Task<UploadTask.TaskSnapshot> task) throws Exception {
-                if (!task.isSuccessful()) {
-                    throw task.getException() != null ? task.getException() : new Exception("Upload failed");
-                }
-                // request download url
-                return storageRef.getDownloadUrl();
+        uploadTask.continueWithTask(task -> {
+            if (!task.isSuccessful()) throw task.getException();
+            return storageRef.getDownloadUrl();
+        }).addOnCompleteListener(task -> {
+            if (task.isSuccessful()) {
+                Uri downloadUri = task.getResult();
+                saveToDatabaseSimple(uid, downloadUri.toString());
             }
-        }).addOnCompleteListener(new OnCompleteListener<Uri>() {
-            @Override
-            public void onComplete(@NonNull Task<Uri> task) {
-                if (task.isSuccessful()) {
-                    Uri downloadUri = task.getResult();
-                    if (downloadUri != null) {
-                        String downloadUrl = downloadUri.toString();
-                        Log.d(TAG, "Download URL obtained: " + downloadUrl);
-                        saveToDatabaseSimple(uid, downloadUrl);
-                    } else {
-                        Log.e(TAG, "Download URI is null");
-                        Toast.makeText(getContext(), "Failed to get file link", Toast.LENGTH_SHORT).show();
-                    }
-                } else {
-                    Exception e = task.getException();
-                    Log.e(TAG, "Failed to get download URL: " + (e != null ? e.getMessage() : "unknown"));
-                    Toast.makeText(getContext(), "Error receiving link: " + (e != null ? e.getMessage() : ""), Toast.LENGTH_LONG).show();
-                }
-            }
-        }).addOnFailureListener(new OnFailureListener() {
-            @Override
-            public void onFailure(@NonNull Exception e) {
-                Log.e(TAG, "Upload failed: " + e.getMessage());
-                Toast.makeText(getContext(), "Loading error: " + e.getMessage(), Toast.LENGTH_LONG).show();
-            }
-        });
+        }).addOnFailureListener(e ->
+                Toast.makeText(getContext(), "Upload error: " + e.getMessage(), Toast.LENGTH_LONG).show());
     }
 
     private void saveToDatabaseSimple(String uid, String imageUrl) {
@@ -443,25 +306,14 @@ public class ProfileFragment extends Fragment {
                 .child(uid)
                 .child("profileImage")
                 .setValue(imageUrl)
-                .addOnSuccessListener(new OnSuccessListener<Void>() {
-                    @Override
-                    public void onSuccess(Void unused) {
-                        Log.d(TAG, "Profile image updated in database");
-                        Toast.makeText(getContext(), "Profile photo updated!", Toast.LENGTH_SHORT).show();
+                .addOnSuccessListener(unused -> {
+                    if (binding != null)
+                        Glide.with(requireContext()).load(imageUrl).into(binding.profileImage);
 
-                        // Обновляем изображение в UI
-                        Glide.with(requireContext())
-                                .load(imageUrl)
-                                .into(binding.profileImage);
-                    }
+                    Toast.makeText(getContext(), "Profile photo updated!", Toast.LENGTH_SHORT).show();
                 })
-                .addOnFailureListener(new OnFailureListener() {
-                    @Override
-                    public void onFailure(@NonNull Exception e) {
-                        Log.e(TAG, "Failed to update database: " + e.getMessage());
-                        Toast.makeText(getContext(), "Error saving to database", Toast.LENGTH_SHORT).show();
-                    }
-                });
+                .addOnFailureListener(e ->
+                        Toast.makeText(getContext(), "Error saving to database", Toast.LENGTH_SHORT).show());
     }
 
     @Override
